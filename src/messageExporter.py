@@ -68,18 +68,40 @@ class MessageExporter:
             try:
                 message = await self.client.get_messages(chat_id=chat_id, message_ids=msg_id)
                 if message and not message.empty:
-                    # Convert message to dict and add extra metadata
-                    msg_dict = self._message_to_dict(message)
-                    
-                    # Add reply information
-                    reply_info = await self._get_reply_info(message)
-                    if reply_info:
-                        msg_dict['reply_to'] = reply_info
-                    
-                    messages_data.append(msg_dict)
-                    
+                    try:
+                        # Convert message to dict and add extra metadata
+                        msg_dict = self._message_to_dict(message)
+                        # Add reply information
+                        reply_info = await self._get_reply_info(message)
+                        if reply_info:
+                            msg_dict['reply_to'] = reply_info
+                        # Try to make it JSON serializable (test only, not for saving)
+                        json.dumps(msg_dict, ensure_ascii=False, default=str)
+                        messages_data.append(msg_dict)
+                    except Exception as e:
+                        # If serialization fails, add error placeholder
+                        messages_data.append({
+                            'id': msg_id,
+                            'error': f"Could not serialize message {msg_id}: {e}",
+                            'log': f"Could not serialize message {msg_id}: {e}",
+                            'date': getattr(message, "date", None)
+                        })
+                else:
+                    # Message is empty or not found
+                    messages_data.append({
+                        'id': msg_id,
+                        'error': f"Message {msg_id} not found or is empty.",
+                        'log': f"Message {msg_id} not found or is empty.",
+                        'date': None
+                    })
             except Exception as e:
-                print(f"Could not get message {msg_id}: {e}")
+                # Log the error for this message and continue
+                messages_data.append({
+                    'id': msg_id,
+                    'error': f"Could not get message {msg_id}: {e}",
+                    'log': f"Could not get message {msg_id}: {e}",
+                    'date': None
+                })
                 continue
         
         return messages_data
@@ -286,7 +308,7 @@ class MessageExporter:
         
         try:
             with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False)
+                json.dump(export_data, f, indent=2, ensure_ascii=False, default=str)
             return json_filename
         except Exception as e:
             print(f"Error saving JSON file: {e}")
@@ -324,6 +346,16 @@ class MessageExporter:
         html_content = f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Telegram Export with JSON Data</title><style>body{{font-family:Arial,sans-serif;margin:20px;background:#f5f5f5}}h1{{color:#0088cc;text-align:center}}h2{{color:#333;border-bottom:2px solid #0088cc;padding-bottom:5px}}.export-info{{background:#fff;padding:15px;margin-bottom:20px;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}.message{{background:#fff;margin-bottom:15px;padding:15px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);position:relative;transition:all 0.3s ease}}.message-header{{font-size:12px;color:#666;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px}}.message-text{{line-height:1.6;margin-bottom:10px}}.message-media{{margin:10px 0}}img{{max-width:100%;height:auto;border-radius:5px}}video{{max-width:100%;height:auto;border-radius:5px}}audio{{width:100%}}.media-file{{background:#f9f9f9;padding:10px;border-radius:5px;margin:5px 0}}.caption{{font-style:italic;color:#666;margin-top:10px}}.reply-info{{background:#e8f4fd;border-left:4px solid #0088cc;padding:10px;margin:10px 0;border-radius:0 5px 5px 0;cursor:pointer;transition:background 0.2s ease}}.reply-info:hover{{background:#d4edda}}.reply-preview{{font-size:14px;color:#555}}.json-toggle{{background:#f0f0f0;border:1px solid #ccc;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-top:10px;display:inline-block}}.json-data{{display:none;background:#2d2d2d;color:#f8f8f2;padding:15px;border-radius:5px;margin-top:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:300px;overflow-y:auto}}.stats{{background:#e8f4fd;padding:10px;border-radius:5px;margin-top:20px}}.media-info{{font-size:12px;color:#888;margin-top:5px}}.highlight{{background:#ffeb3b!important;border:2px solid #ff9800!important;transform:scale(1.02)}}.reply-link{{color:#0088cc;text-decoration:underline}}</style><script>function toggleJson(id){{var elem=document.getElementById("json-"+id);elem.style.display=elem.style.display==="none"?"block":"none"}}function scrollToMessage(messageId){{var targetMsg=document.getElementById("msg-"+messageId);if(targetMsg){{targetMsg.scrollIntoView({{behavior:"smooth",block:"center"}});targetMsg.classList.add("highlight");setTimeout(function(){{targetMsg.classList.remove("highlight")}},1000)}}else{{alert("Replied message not found in this export range")}}}}window.onload=function(){{document.querySelectorAll(".reply-info").forEach(function(elem){{elem.addEventListener("click",function(){{var messageId=this.getAttribute("data-reply-to");if(messageId)scrollToMessage(messageId)}})}})}};</script></head><body><h1>Telegram Messages Export with JSON Data</h1><div class="export-info"><h2>Export Information</h2><p><strong>Export Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p><p><strong>Start Link:</strong> <a href="{start_link}" target="_blank">{start_link}</a></p><p><strong>End Link:</strong> <a href="{end_link}" target="_blank">{end_link}</a></p><p><strong>Total Messages:</strong> {len(messages_data)}</p></div><h2>Messages</h2>'
         
         for msg_data in messages_data:
+            # If this is an error/log placeholder, render the log and skip normal rendering
+            if 'error' in msg_data:
+                html_content += (
+                    f'<div class="message" id="msg-{msg_data["id"]}" style="background:#ffeaea;border:1px solid #ff8888;">'
+                    f'<div class="message-header" style="color:#b71c1c;">Message ID: {msg_data["id"]} | ERROR</div>'
+                    f'<div class="message-text" style="color:#b71c1c;"><b>Error:</b> {msg_data.get("log", "Unknown error")}</div>'
+                    f'</div>'
+                )
+                continue
+
             sender = msg_data.get('from_user', {}).get('first_name', 'Channel') if msg_data.get('from_user') else 'Channel'
             msg_date = msg_data.get('date', 'Unknown')
             
@@ -362,7 +394,8 @@ class MessageExporter:
                     html_content += f'<div class="message-media"><img src="{relative_path}" alt="Image"></div>'
                 elif file_ext in ['mp4', 'avi', 'mov', 'webm']:
                     html_content += f'<div class="message-media"><video controls><source src="{relative_path}" type="video/{file_ext}">Your browser does not support video.</video></div>'
-                elif file_ext in ['mp3', 'wav', 'ogg', 'opus']:
+                elif file_ext in ['mp3', 'wav', 'ogg', 'opus', 'oga']:
+                    # Play oga files in internal player
                     html_content += f'<div class="message-media"><audio controls><source src="{relative_path}" type="audio/{file_ext}">Your browser does not support audio.</audio></div>'
                 else:
                     html_content += f'<div class="media-file">📁 <a href="{relative_path}" target="_blank">{filename}</a></div>'
@@ -386,7 +419,11 @@ class MessageExporter:
                 html_content += '</div>'
 
             # JSON toggle button and data
-            html_content += f'<div class="json-toggle" onclick="toggleJson({msg_data["id"]})">Show/Hide JSON Data</div><div id="json-{msg_data["id"]}" class="json-data">{json.dumps(msg_data, indent=2, ensure_ascii=False)}</div></div>'
+            try:
+                json_data_str = json.dumps(msg_data, indent=2, ensure_ascii=False, default=str)
+            except Exception as e:
+                json_data_str = f"Could not serialize message: {e}"
+            html_content += f'<div class="json-toggle" onclick="toggleJson({msg_data["id"]})">Show/Hide JSON Data</div><div id="json-{msg_data["id"]}" class="json-data">{json_data_str}</div></div>'
         
         # Add statistics
         media_count = len(media_files)

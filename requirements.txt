@@ -1,6 +1,6 @@
 pyaes==1.6.1
 pyperclip==1.9.0
-pyrotgfork==2.1.35
+pyrotgfork==2.2.12
 PySocks==1.7.1
 PyTgCrypto==1.2.6
 python-dotenv==1.0.1
