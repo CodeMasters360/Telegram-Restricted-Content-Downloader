@@ -11,7 +11,9 @@ class FileManager:
             "downloads",
             "downloads/media", 
             "downloads/text",
-            "downloads/captions"
+            "downloads/captions",
+            "downloads/exports",
+            "downloads/exports/media"
         ]
         
         for directory in directories:

@@ -7,6 +7,7 @@ from src.console import Console
 from src.intro import Intro
 from src.barProgress import BarProgress
 from src.textHandler import TextHandler
+from src.messageExporter import MessageExporter
 
 load_dotenv()
 
@@ -16,9 +17,32 @@ api_hash = os.getenv("API_HASH")
 class Client():
     def __init__(self):
         self.client = PyrogramClient(name="mysession", api_id=api_id, api_hash=api_hash)
+        self.exporter = MessageExporter(self.client)
     
     async def start(self):
         await self.client.start()
+    
+    async def export_message_range(self, start_link: str, end_link: str) -> str:
+        """Export messages between two links and create HTML file"""
+        try:
+            Console.clear()
+            Intro.create()
+            print("Starting message export...")
+            print(f"From: {start_link}")
+            print(f"To: {end_link}")
+            
+            html_filename = await self.exporter.export_message_range(start_link, end_link)
+            
+            if html_filename:
+                print(f"Export completed! HTML file created: {html_filename}")
+                return html_filename
+            else:
+                print("Export failed!")
+                return None
+                
+        except Exception as e:
+            print(f"Export error: {e}")
+            return None
     
     async def download_media(self, links: List[str]):
         try:

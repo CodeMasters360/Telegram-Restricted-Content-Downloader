@@ -91,6 +91,24 @@ async def main():
             Console.clear()
             Intro.create()
 
+        elif command.startswith("export"):
+            parts = command.split()
+            if len(parts) == 3:
+                start_link = parts[1]
+                end_link = parts[2]
+                
+                if start_link.startswith("https://t.me/") and end_link.startswith("https://t.me/"):
+                    print("Starting export process...")
+                    result = await client.export_message_range(start_link, end_link)
+                    if result:
+                        print(f"Export saved as: {result}")
+                        print("You can open this HTML file in your browser to view the messages.")
+                else:
+                    print("Please provide valid Telegram links")
+            else:
+                print("Usage: export <start_link> <end_link>")
+                print("Example: export https://t.me/c/123456789/1 https://t.me/c/123456789/10")
+
         elif command == "stats":
             stats = FileManager.get_download_stats()
             print(f"\nTotal Downloads:")
@@ -113,6 +131,7 @@ async def main():
             print("Available commands:")
             print("  [Enter] - Download all queued links")
             print("  r - Reset queue")
+            print("  export <start_link> <end_link> - Export message range to HTML")
             print("  stats - Show download statistics")
             print("  exit - Exit application")
 
