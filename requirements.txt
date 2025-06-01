@@ -5,4 +5,3 @@ PySocks==1.7.1
 PyTgCrypto==1.2.6
 python-dotenv==1.0.1
 TgCrypto==1.2.5
-uvloop==0.19.0

@@ -10,6 +10,7 @@ from src.intro import Intro
 from src.console import Console
 from src.exceptions import NoContinueException
 from src.client import Client
+from src.fileManager import FileManager
 
 links = []
 running = True
@@ -46,6 +47,9 @@ def monitor_clipboard():
 async def main():
     global running, links, last_text
 
+    # Setup download directories
+    FileManager.setup_directories()
+
     client = Client()
     await client.start()
 
@@ -63,9 +67,18 @@ async def main():
                 print("Huh? you didn't copy any telegram media link yet...")
                 continue
 
-            print("Starting to download medias...")
+            print("Starting to download content...")
+            print("Note: Text content will be saved as .txt files")
 
             await client.download_media(links)
+            
+            # Show download statistics
+            stats = FileManager.get_download_stats()
+            print(f"\nDownload Summary:")
+            print(f"  Media files: {stats['media_files']}")
+            print(f"  Text files: {stats['text_files']}")
+            print(f"  Caption files: {stats['caption_files']}")
+            
             links = []
             pyperclip.copy("")
             last_text = ""
@@ -78,12 +91,30 @@ async def main():
             Console.clear()
             Intro.create()
 
+        elif command == "stats":
+            stats = FileManager.get_download_stats()
+            print(f"\nTotal Downloads:")
+            print(f"  Total files: {stats['total_files']}")
+            print(f"  Media files: {stats['media_files']}")
+            print(f"  Text files: {stats['text_files']}")
+            print(f"  Caption files: {stats['caption_files']}")
+            
+            recent = FileManager.list_recent_files(limit=5)
+            if recent:
+                print(f"\nRecent downloads:")
+                for file in recent:
+                    print(f"  {file}")
+
         elif command == "exit":
             print("Exiting...")
             running = False
 
         else:
-            print("I have no idea what command is that...")
+            print("Available commands:")
+            print("  [Enter] - Download all queued links")
+            print("  r - Reset queue")
+            print("  stats - Show download statistics")
+            print("  exit - Exit application")
 
 
 if __name__ == "__main__":
