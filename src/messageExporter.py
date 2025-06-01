@@ -356,10 +356,19 @@ class MessageExporter:
                 )
                 continue
 
-            sender = msg_data.get('from_user', {}).get('first_name', 'Channel') if msg_data.get('from_user') else 'Channel'
+            # Compose sender display: Name (id) [@username]
+            sender_name = msg_data.get('from_user', {}).get('first_name', 'Channel') if msg_data.get('from_user') else 'Channel'
+            sender_id = msg_data.get('from_user', {}).get('id', None)
+            sender_username = msg_data.get('from_user', {}).get('username', None)
+            sender_info = sender_name
+            if sender_id is not None:
+                sender_info += f' (id: {sender_id})'
+            if sender_username:
+                sender_info += f' [@{sender_username}]'
+
             msg_date = msg_data.get('date', 'Unknown')
             
-            html_content += f'<div class="message" id="msg-{msg_data["id"]}"><div class="message-header">Message ID: {msg_data["id"]} | Date: {msg_date} | From: {sender}'
+            html_content += f'<div class="message" id="msg-{msg_data["id"]}"><div class="message-header">Message ID: {msg_data["id"]} | Date: {msg_date} | From: {sender_info}'
             
             if msg_data.get('media_type'):
                 html_content += f' | Media: {msg_data["media_type"]}'
@@ -395,8 +404,9 @@ class MessageExporter:
                 elif file_ext in ['mp4', 'avi', 'mov', 'webm']:
                     html_content += f'<div class="message-media"><video controls><source src="{relative_path}" type="video/{file_ext}">Your browser does not support video.</video></div>'
                 elif file_ext in ['mp3', 'wav', 'ogg', 'opus', 'oga']:
-                    # Play oga files in internal player
-                    html_content += f'<div class="message-media"><audio controls><source src="{relative_path}" type="audio/{file_ext}">Your browser does not support audio.</audio></div>'
+                    # Play oga files in internal player, set correct MIME type for oga
+                    audio_type = "audio/ogg" if file_ext == "oga" else f"audio/{file_ext}"
+                    html_content += f'<div class="message-media"><audio controls><source src="{relative_path}" type="{audio_type}">Your browser does not support audio.</audio></div>'
                 else:
                     html_content += f'<div class="media-file">📁 <a href="{relative_path}" target="_blank">{filename}</a></div>'
                 
