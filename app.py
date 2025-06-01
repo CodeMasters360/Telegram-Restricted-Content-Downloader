@@ -109,6 +109,24 @@ async def main():
                 print("Usage: export <start_link> <end_link>")
                 print("Example: export https://t.me/c/123456789/1 https://t.me/c/123456789/10")
 
+        elif command.startswith("json"):
+            parts = command.split()
+            if len(parts) == 3:
+                start_link = parts[1]
+                end_link = parts[2]
+                
+                if start_link.startswith("https://t.me/") and end_link.startswith("https://t.me/"):
+                    print("Starting JSON-only export...")
+                    result = await client.export_json_only(start_link, end_link)
+                    if result:
+                        print(f"JSON export saved as: {result}")
+                        print("This file contains complete message metadata including reply information.")
+                else:
+                    print("Please provide valid Telegram links")
+            else:
+                print("Usage: json <start_link> <end_link>")
+                print("Example: json https://t.me/c/123456789/1 https://t.me/c/123456789/10")
+
         elif command == "stats":
             stats = FileManager.get_download_stats()
             print(f"\nTotal Downloads:")
@@ -131,7 +149,8 @@ async def main():
             print("Available commands:")
             print("  [Enter] - Download all queued links")
             print("  r - Reset queue")
-            print("  export <start_link> <end_link> - Export message range to HTML")
+            print("  export <start_link> <end_link> - Export message range to HTML with media")
+            print("  json <start_link> <end_link> - Export message range to JSON only")
             print("  stats - Show download statistics")
             print("  exit - Exit application")
 

@@ -44,6 +44,28 @@ class Client():
             print(f"Export error: {e}")
             return None
     
+    async def export_json_only(self, start_link: str, end_link: str) -> str:
+        """Export messages as JSON only without downloading media"""
+        try:
+            Console.clear()
+            Intro.create()
+            print("Starting JSON export...")
+            print(f"From: {start_link}")
+            print(f"To: {end_link}")
+            
+            json_filename = await self.exporter.export_json_only(start_link, end_link)
+            
+            if json_filename:
+                print(f"JSON export completed! File created: {json_filename}")
+                return json_filename
+            else:
+                print("JSON export failed!")
+                return None
+                
+        except Exception as e:
+            print(f"JSON export error: {e}")
+            return None
+    
     async def download_media(self, links: List[str]):
         try:
             media_count = 0
