@@ -12,33 +12,91 @@ class MessageExporter:
         
     async def export_message_range(self, start_link: str, end_link: str, downloads_dir: str = "downloads/exports") -> str:
         """Export messages between start_link and end_link and create HTML file"""
-        if not os.path.exists(downloads_dir):
-            os.makedirs(downloads_dir)
+        try:
+            if not os.path.exists(downloads_dir):
+                os.makedirs(downloads_dir)
+                
+            # Parse links to get message IDs and chat info
+            start_info = self._parse_message_link(start_link)
+            end_info = self._parse_message_link(end_link)
             
-        # Parse links to get message IDs and chat info
-        start_info = self._parse_message_link(start_link)
-        end_info = self._parse_message_link(end_link)
-        
-        if not start_info or not end_info or start_info['chat_id'] != end_info['chat_id']:
-            raise ValueError("Invalid or mismatched message links")
+            if not start_info or not end_info or start_info['chat_id'] != end_info['chat_id']:
+                raise ValueError("Invalid or mismatched message links")
+                
+            chat_id = start_info['chat_id']
+            start_msg_id = min(start_info['message_id'], end_info['message_id'])
+            end_msg_id = max(start_info['message_id'], end_info['message_id'])
             
-        chat_id = start_info['chat_id']
-        start_msg_id = min(start_info['message_id'], end_info['message_id'])
-        end_msg_id = max(start_info['message_id'], end_info['message_id'])
-        
-        # Get all messages in range with full JSON data
-        messages_data = await self._get_messages_with_json(chat_id, start_msg_id, end_msg_id)
-        
-        # Download media files
-        media_files = await self._download_range_media(messages_data, downloads_dir)
-        
-        # Generate HTML file with JSON data and reply info
-        html_filename = self._generate_enhanced_html_export(messages_data, media_files, downloads_dir, start_link, end_link)
-        
-        # Also save JSON file
-        json_filename = self._save_json_export(messages_data, downloads_dir)
-        
-        return html_filename
+            # Get all messages in range with full JSON data
+            messages_data = await self._get_messages_with_json(chat_id, start_msg_id, end_msg_id)
+            
+            # Download media files
+            media_files = await self._download_range_media(messages_data, downloads_dir)
+            
+            # Generate HTML file with JSON data and reply info
+            html_filename = self._generate_enhanced_html_export(messages_data, media_files, downloads_dir, start_link, end_link)
+            
+            # Also save JSON file
+            json_filename = self._save_json_export(messages_data, downloads_dir)
+            
+            return html_filename
+        except Exception as e:
+            # If everything fails, create a minimal error HTML file
+            print(f"Critical export error: {e}")
+            return self._create_emergency_html(start_link, end_link, str(e), downloads_dir)
+
+    def _create_emergency_html(self, start_link: str, end_link: str, error_msg: str, downloads_dir: str) -> str:
+        """Create emergency HTML file when export completely fails"""
+        try:
+            if not os.path.exists(downloads_dir):
+                os.makedirs(downloads_dir)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            html_filename = f"telegram_export_emergency_{timestamp}.html"
+            html_path = os.path.join(downloads_dir, html_filename)
+            
+            emergency_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Telegram Export - Emergency</title>
+                <style>
+                    body {{font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5;}}
+                    .emergency {{background: #fff; padding: 20px; border-radius: 5px; border-left: 4px solid #e74c3c;}}
+                    .info {{background: #fff; padding: 15px; margin-top: 20px; border-radius: 5px; border-left: 4px solid #3498db;}}
+                </style>
+            </head>
+            <body>
+                <div class="emergency">
+                    <h2>⚠️ Export Emergency Recovery</h2>
+                    <p><strong>The export process encountered a critical error, but this HTML file was created to preserve your request.</strong></p>
+                    <p><strong>Start Link:</strong> {start_link}</p>
+                    <p><strong>End Link:</strong> {end_link}</p>
+                    <p><strong>Error Details:</strong> {error_msg}</p>
+                    <p><strong>Generated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+                </div>
+                <div class="info">
+                    <h3>📋 Troubleshooting</h3>
+                    <ul>
+                        <li>Check if the message links are valid and accessible</li>
+                        <li>Ensure you have access to the chat/channel</li>
+                        <li>Try exporting a smaller range of messages</li>
+                        <li>Check your internet connection</li>
+                        <li>Restart the application and try again</li>
+                    </ul>
+                </div>
+            </body>
+            </html>
+            """
+            
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(emergency_html)
+            
+            return html_filename
+        except Exception as e2:
+            print(f"Even emergency HTML creation failed: {e2}")
+            return None
 
     async def export_json_only(self, start_link: str, end_link: str, downloads_dir: str = "downloads/exports") -> str:
         """Export only JSON data without downloading media"""
@@ -278,7 +336,11 @@ class MessageExporter:
         media_files = []
         
         for msg_data in messages_data:
-            if msg_data['media_type']:
+            # Skip error messages
+            if 'error' in msg_data:
+                continue
+                
+            if msg_data.get('media_type'):
                 try:
                     # Reconstruct message for download
                     message = await self.client.get_messages(chat_id=msg_data['chat_id'], message_ids=msg_data['id'])
@@ -334,118 +396,139 @@ class MessageExporter:
     
     def _generate_enhanced_html_export(self, messages_data: List[Dict], media_files: List[Dict], downloads_dir: str, start_link: str, end_link: str) -> str:
         """Generate enhanced HTML file with JSON data and reply information"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        html_filename = f"telegram_export_{timestamp}.html"
-        html_path = os.path.join(downloads_dir, html_filename)
-        
-        media_lookup = {item['message_id']: item['path'] for item in media_files}
-        
-        # Create message ID lookup for scroll-to functionality
-        message_ids = [msg['id'] for msg in messages_data]
-        
-        html_content = f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Telegram Export with JSON Data</title><style>body{{font-family:Arial,sans-serif;margin:20px;background:#f5f5f5}}h1{{color:#0088cc;text-align:center}}h2{{color:#333;border-bottom:2px solid #0088cc;padding-bottom:5px}}.export-info{{background:#fff;padding:15px;margin-bottom:20px;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}.message{{background:#fff;margin-bottom:15px;padding:15px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);position:relative;transition:all 0.3s ease}}.message-header{{font-size:12px;color:#666;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px}}.message-text{{line-height:1.6;margin-bottom:10px}}.message-media{{margin:10px 0}}img{{max-width:100%;height:auto;border-radius:5px}}video{{max-width:100%;height:auto;border-radius:5px}}audio{{width:100%}}.media-file{{background:#f9f9f9;padding:10px;border-radius:5px;margin:5px 0}}.caption{{font-style:italic;color:#666;margin-top:10px}}.reply-info{{background:#e8f4fd;border-left:4px solid #0088cc;padding:10px;margin:10px 0;border-radius:0 5px 5px 0;cursor:pointer;transition:background 0.2s ease}}.reply-info:hover{{background:#d4edda}}.reply-preview{{font-size:14px;color:#555}}.json-toggle{{background:#f0f0f0;border:1px solid #ccc;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-top:10px;display:inline-block}}.json-data{{display:none;background:#2d2d2d;color:#f8f8f2;padding:15px;border-radius:5px;margin-top:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:300px;overflow-y:auto}}.stats{{background:#e8f4fd;padding:10px;border-radius:5px;margin-top:20px}}.media-info{{font-size:12px;color:#888;margin-top:5px}}.highlight{{background:#ffeb3b!important;border:2px solid #ff9800!important;transform:scale(1.02)}}.reply-link{{color:#0088cc;text-decoration:underline}}</style><script>function toggleJson(id){{var elem=document.getElementById("json-"+id);elem.style.display=elem.style.display==="none"?"block":"none"}}function scrollToMessage(messageId){{var targetMsg=document.getElementById("msg-"+messageId);if(targetMsg){{targetMsg.scrollIntoView({{behavior:"smooth",block:"center"}});targetMsg.classList.add("highlight");setTimeout(function(){{targetMsg.classList.remove("highlight")}},1000)}}else{{alert("Replied message not found in this export range")}}}}window.onload=function(){{document.querySelectorAll(".reply-info").forEach(function(elem){{elem.addEventListener("click",function(){{var messageId=this.getAttribute("data-reply-to");if(messageId)scrollToMessage(messageId)}})}})}};</script></head><body><h1>Telegram Messages Export with JSON Data</h1><div class="export-info"><h2>Export Information</h2><p><strong>Export Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p><p><strong>Start Link:</strong> <a href="{start_link}" target="_blank">{start_link}</a></p><p><strong>End Link:</strong> <a href="{end_link}" target="_blank">{end_link}</a></p><p><strong>Total Messages:</strong> {len(messages_data)}</p></div><h2>Messages</h2>'
-        
-        for msg_data in messages_data:
-            # If this is an error/log placeholder, render the log and skip normal rendering
-            if 'error' in msg_data:
-                html_content += (
-                    f'<div class="message" id="msg-{msg_data["id"]}" style="background:#ffeaea;border:1px solid #ff8888;">'
-                    f'<div class="message-header" style="color:#b71c1c;">Message ID: {msg_data["id"]} | ERROR</div>'
-                    f'<div class="message-text" style="color:#b71c1c;"><b>Error:</b> {msg_data.get("log", "Unknown error")}</div>'
-                    f'</div>'
-                )
-                continue
-
-            # Compose sender display: Name (id) [@username]
-            sender_name = msg_data.get('from_user', {}).get('first_name', 'Channel') if msg_data.get('from_user') else 'Channel'
-            sender_id = msg_data.get('from_user', {}).get('id', None)
-            sender_username = msg_data.get('from_user', {}).get('username', None)
-            sender_info = sender_name
-            if sender_id is not None:
-                sender_info += f' (id: {sender_id})'
-            if sender_username:
-                sender_info += f' [@{sender_username}]'
-
-            msg_date = msg_data.get('date', 'Unknown')
-            
-            html_content += f'<div class="message" id="msg-{msg_data["id"]}"><div class="message-header">Message ID: {msg_data["id"]} | Date: {msg_date} | From: {sender_info}'
-            
-            if msg_data.get('media_type'):
-                html_content += f' | Media: {msg_data["media_type"]}'
-            
-            html_content += '</div>'
-            
-            # Show reply information with clickable functionality
-            if msg_data.get('reply_to'):
-                reply = msg_data['reply_to']
-                reply_msg_id = reply['message_id']
-                is_in_range = reply_msg_id in message_ids
-                
-                if is_in_range:
-                    html_content += f'<div class="reply-info" data-reply-to="{reply_msg_id}" title="Click to scroll to replied message"><strong>↳ Replying to message {reply_msg_id}</strong> by {reply["from_user"]}<div class="reply-preview">{reply.get("text_preview", "")}</div></div>'
-                else:
-                    html_content += f'<div class="reply-info"><strong>↳ Replying to message {reply_msg_id}</strong> by {reply["from_user"]} <span style="color:#888;">(not in export range)</span><div class="reply-preview">{reply.get("text_preview", "")}</div></div>'
-            
-            # Message text
-            if msg_data.get('text') or msg_data.get('caption'):
-                text_content = msg_data.get('text') or msg_data.get('caption')
-                escaped_text = text_content.replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
-                html_content += f'<div class="message-text">{escaped_text}</div>'
-            
-            # Media content
-            if msg_data['id'] in media_lookup:
-                media_path = media_lookup[msg_data['id']]
-                filename = os.path.basename(media_path)
-                file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
-                relative_path = os.path.relpath(media_path, downloads_dir).replace('\\', '/')
-                
-                if file_ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
-                    html_content += f'<div class="message-media"><img src="{relative_path}" alt="Image"></div>'
-                elif file_ext in ['mp4', 'avi', 'mov', 'webm']:
-                    html_content += f'<div class="message-media"><video controls><source src="{relative_path}" type="video/{file_ext}">Your browser does not support video.</video></div>'
-                elif file_ext in ['mp3', 'wav', 'ogg', 'opus', 'oga']:
-                    # Play oga files in internal player, set correct MIME type for oga
-                    audio_type = "audio/ogg" if file_ext == "oga" else f"audio/{file_ext}"
-                    html_content += f'<div class="message-media"><audio controls><source src="{relative_path}" type="{audio_type}">Your browser does not support audio.</audio></div>'
-                else:
-                    html_content += f'<div class="media-file">📁 <a href="{relative_path}" target="_blank">{filename}</a></div>'
-                
-                # Add media info
-                if msg_data.get('media_info'):
-                    media_info = msg_data['media_info']
-                    info_text = f"File size: {media_info.get('file_size', 'Unknown')}"
-                    if media_info.get('duration'):
-                        info_text += f" | Duration: {media_info['duration']}s"
-                    html_content += f'<div class="media-info">{info_text}</div>'
-            # Show reactions if present and not empty
-            if msg_data.get('reactions') and len(msg_data['reactions']) > 0:
-                html_content += '<div class="message-reactions" style="margin-bottom:8px;">'
-                for reaction in msg_data['reactions']:
-                    emoji = reaction.get('emoji', '')
-                    count = reaction.get('count', 0)
-                    chosen = reaction.get('chosen', False)
-                    chosen_style = 'border:2px solid #0088cc;border-radius:50%;padding:2px;' if chosen else ''
-                    html_content += f'<span style="display:inline-block;margin-right:8px;font-size:18px;{chosen_style}">{emoji} <span style="font-size:13px;color:#555;">{count}</span></span>'
-                html_content += '</div>'
-
-            # JSON toggle button and data
-            try:
-                json_data_str = json.dumps(msg_data, indent=2, ensure_ascii=False, default=str)
-            except Exception as e:
-                json_data_str = f"Could not serialize message: {e}"
-            html_content += f'<div class="json-toggle" onclick="toggleJson({msg_data["id"]})">Show/Hide JSON Data</div><div id="json-{msg_data["id"]}" class="json-data">{json_data_str}</div></div>'
-        
-        # Add statistics
-        media_count = len(media_files)
-        text_only_count = len([m for m in messages_data if (m.get('text') or m.get('caption')) and not m.get('media_type')])
-        reply_count = len([m for m in messages_data if m.get('reply_to')])
-        
-        html_content += f'<div class="stats"><h2>Export Statistics</h2><p>Total Messages: {len(messages_data)}</p><p>Messages with Media: {media_count}</p><p>Text-only Messages: {text_only_count}</p><p>Reply Messages: {reply_count}</p></div></body></html>'
-        
         try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            html_filename = f"telegram_export_{timestamp}.html"
+            html_path = os.path.join(downloads_dir, html_filename)
+            
+            media_lookup = {item['message_id']: item['path'] for item in media_files}
+            message_ids = [msg['id'] for msg in messages_data if 'error' not in msg]
+            
+            # Count failed and successful messages
+            failed_messages = [msg for msg in messages_data if 'error' in msg]
+            successful_messages = [msg for msg in messages_data if 'error' not in msg]
+            
+            html_content = f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Telegram Export with JSON Data</title><style>body{{font-family:Arial,sans-serif;margin:20px;background:#f5f5f5}}h1{{color:#0088cc;text-align:center}}h2{{color:#333;border-bottom:2px solid #0088cc;padding-bottom:5px}}.export-info{{background:#fff;padding:15px;margin-bottom:20px;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}.message{{background:#fff;margin-bottom:15px;padding:15px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);position:relative;transition:all 0.3s ease}}.message-header{{font-size:12px;color:#666;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px}}.message-text{{line-height:1.6;margin-bottom:10px}}.message-media{{margin:10px 0}}img{{max-width:100%;height:auto;border-radius:5px}}video{{max-width:100%;height:auto;border-radius:5px}}audio{{width:100%}}.media-file{{background:#f9f9f9;padding:10px;border-radius:5px;margin:5px 0}}.caption{{font-style:italic;color:#666;margin-top:10px}}.reply-info{{background:#e8f4fd;border-left:4px solid #0088cc;padding:10px;margin:10px 0;border-radius:0 5px 5px 0;cursor:pointer;transition:background 0.2s ease}}.reply-info:hover{{background:#d4edda}}.reply-preview{{font-size:14px;color:#555}}.json-toggle{{background:#f0f0f0;border:1px solid #ccc;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-top:10px;display:inline-block}}.json-data{{display:none;background:#2d2d2d;color:#f8f8f2;padding:15px;border-radius:5px;margin-top:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:300px;overflow-y:auto}}.stats{{background:#e8f4fd;padding:10px;border-radius:5px;margin-top:20px}}.media-info{{font-size:12px;color:#888;margin-top:5px}}.highlight{{background:#ffeb3b!important;border:2px solid #ff9800!important;transform:scale(1.02)}}.reply-link{{color:#0088cc;text-decoration:underline}}</style><script>function toggleJson(id){{var elem=document.getElementById("json-"+id);elem.style.display=elem.style.display==="none"?"block":"none"}}function scrollToMessage(messageId){{var targetMsg=document.getElementById("msg-"+messageId);if(targetMsg){{targetMsg.scrollIntoView({{behavior:"smooth",block:"center"}});targetMsg.classList.add("highlight");setTimeout(function(){{targetMsg.classList.remove("highlight")}},1000)}}else{{alert("Replied message not found in this export range")}}}}window.onload=function(){{document.querySelectorAll(".reply-info").forEach(function(elem){{elem.addEventListener("click",function(){{var messageId=this.getAttribute("data-reply-to");if(messageId)scrollToMessage(messageId)}})}})}};</script></head><body><h1>Telegram Messages Export with JSON Data</h1><div class="export-info"><h2>Export Information</h2><p><strong>Export Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p><p><strong>Start Link:</strong> <a href="{start_link}" target="_blank">{start_link}</a></p><p><strong>End Link:</strong> <a href="{end_link}" target="_blank">{end_link}</a></p><p><strong>Total Messages:</strong> {len(messages_data)}</p><p><strong>Successful:</strong> {len(successful_messages)}</p><p><strong>Failed:</strong> {len(failed_messages)}</p></div><h2>Messages</h2>'
+            
+            for msg_data in messages_data:
+                # If this is an error/log placeholder, render with clickable failed link
+                if 'error' in msg_data:
+                    # Reconstruct the message link based on chat_id pattern
+                    chat_id = msg_data.get('chat_id') or 'unknown'
+                    msg_id = msg_data['id']
+                    
+                    # Try to reconstruct the link based on start_link pattern
+                    if start_link.startswith("https://t.me/c/") and str(chat_id).startswith('-100'):
+                        clean_chat_id = str(chat_id)[4:] if str(chat_id).startswith('-100') else str(chat_id)
+                        failed_link = f"https://t.me/c/{clean_chat_id}/{msg_id}"
+                    else:
+                        try:
+                            username = start_link.split('https://t.me/')[-1].split('/')[0]
+                            failed_link = f"https://t.me/{username}/{msg_id}"
+                        except:
+                            failed_link = f"Message ID: {msg_id}"
+                    
+                    html_content += (
+                        f'<div class="message" id="msg-{msg_data["id"]}" style="background:#ffeaea;border:1px solid #ff8888;">'
+                        f'<div class="message-header" style="color:#b71c1c;">Message ID: {msg_data["id"]} | ERROR</div>'
+                        f'<div class="message-text" style="color:#b71c1c;"><b>Error:</b> {msg_data.get("error", "Unknown error")}</div>'
+                        f'<div style="margin-top:10px;"><strong>Check manually:</strong> <a href="{failed_link}" target="_blank" style="color:#0088cc;">{failed_link}</a></div>'
+                        f'</div>'
+                    )
+                    continue
+
+                # Compose sender display: Name (id) [@username]
+                sender_name = msg_data.get('from_user', {}).get('first_name', 'Channel') if msg_data.get('from_user') else 'Channel'
+                sender_id = msg_data.get('from_user', {}).get('id', None)
+                sender_username = msg_data.get('from_user', {}).get('username', None)
+                sender_info = sender_name
+                if sender_id is not None:
+                    sender_info += f' (id: {sender_id})'
+                if sender_username:
+                    sender_info += f' [@{sender_username}]'
+
+                msg_date = msg_data.get('date', 'Unknown')
+                
+                html_content += f'<div class="message" id="msg-{msg_data["id"]}"><div class="message-header">Message ID: {msg_data["id"]} | Date: {msg_date} | From: {sender_info}'
+                
+                if msg_data.get('media_type'):
+                    html_content += f' | Media: {msg_data["media_type"]}'
+                
+                html_content += '</div>'
+                
+                # Show reply information with clickable functionality
+                if msg_data.get('reply_to'):
+                    reply = msg_data['reply_to']
+                    reply_msg_id = reply['message_id']
+                    is_in_range = reply_msg_id in message_ids
+                    
+                    if is_in_range:
+                        html_content += f'<div class="reply-info" data-reply-to="{reply_msg_id}" title="Click to scroll to replied message"><strong>↳ Replying to message {reply_msg_id}</strong> by {reply["from_user"]}<div class="reply-preview">{reply.get("text_preview", "")}</div></div>'
+                    else:
+                        html_content += f'<div class="reply-info"><strong>↳ Replying to message {reply_msg_id}</strong> by {reply["from_user"]} <span style="color:#888;">(not in export range)</span><div class="reply-preview">{reply.get("text_preview", "")}</div></div>'
+                
+                # Message text
+                if msg_data.get('text') or msg_data.get('caption'):
+                    text_content = msg_data.get('text') or msg_data.get('caption')
+                    escaped_text = text_content.replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
+                    html_content += f'<div class="message-text">{escaped_text}</div>'
+                
+                # Media content
+                if msg_data['id'] in media_lookup:
+                    media_path = media_lookup[msg_data['id']]
+                    filename = os.path.basename(media_path)
+                    file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
+                    relative_path = os.path.relpath(media_path, downloads_dir).replace('\\', '/')
+                    
+                    if file_ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                        html_content += f'<div class="message-media"><img src="{relative_path}" alt="Image"></div>'
+                    elif file_ext in ['mp4', 'avi', 'mov', 'webm']:
+                        html_content += f'<div class="message-media"><video controls><source src="{relative_path}" type="video/{file_ext}">Your browser does not support video.</video></div>'
+                    elif file_ext in ['mp3', 'wav', 'ogg', 'opus', 'oga']:
+                        # Play oga files in internal player, set correct MIME type for oga
+                        audio_type = "audio/ogg" if file_ext == "oga" else f"audio/{file_ext}"
+                        html_content += f'<div class="message-media"><audio controls><source src="{relative_path}" type="{audio_type}">Your browser does not support audio.</audio></div>'
+                    else:
+                        html_content += f'<div class="media-file">📁 <a href="{relative_path}" target="_blank">{filename}</a></div>'
+                    
+                    # Add media info
+                    if msg_data.get('media_info'):
+                        media_info = msg_data['media_info']
+                        info_text = f"File size: {media_info.get('file_size', 'Unknown')}"
+                        if media_info.get('duration'):
+                            info_text += f" | Duration: {media_info['duration']}s"
+                        html_content += f'<div class="media-info">{info_text}</div>'
+                
+                # Show reactions if present and not empty
+                if msg_data.get('reactions') and len(msg_data['reactions']) > 0:
+                    html_content += '<div class="message-reactions" style="margin-bottom:8px;">'
+                    for reaction in msg_data['reactions']:
+                        emoji = reaction.get('emoji', '')
+                        count = reaction.get('count', 0)
+                        chosen = reaction.get('chosen', False)
+                        chosen_style = 'border:2px solid #0088cc;border-radius:50%;padding:2px;' if chosen else ''
+                        html_content += f'<span style="display:inline-block;margin-right:8px;font-size:18px;{chosen_style}">{emoji} <span style="font-size:13px;color:#555;">{count}</span></span>'
+                    html_content += '</div>'
+
+                # JSON toggle button and data
+                try:
+                    json_data_str = json.dumps(msg_data, indent=2, ensure_ascii=False, default=str)
+                except Exception as e:
+                    json_data_str = f"Could not serialize message: {e}"
+                html_content += f'<div class="json-toggle" onclick="toggleJson({msg_data["id"]})">Show/Hide JSON Data</div><div id="json-{msg_data["id"]}" class="json-data">{json_data_str}</div></div>'
+            
+            # Add statistics
+            media_count = len(media_files)
+            text_only_count = len([m for m in successful_messages if (m.get('text') or m.get('caption')) and not m.get('media_type')])
+            reply_count = len([m for m in successful_messages if m.get('reply_to')])
+            
+            html_content += f'<div class="stats"><h2>Export Statistics</h2><p>Total Messages: {len(messages_data)}</p><p>Successfully Exported: {len(successful_messages)}</p><p>Failed Messages: {len(failed_messages)}</p><p>Messages with Media: {media_count}</p><p>Text-only Messages: {text_only_count}</p><p>Reply Messages: {reply_count}</p></div></body></html>'
+            
+            # Always try to write the HTML file, even if there were errors
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             return html_filename
         except Exception as e:
-            print(f"Error creating HTML file: {e}")
-            return None
+            print(f"HTML generation failed: {e}")
+            # Create emergency HTML if normal generation fails
+            return self._create_emergency_html(start_link, end_link, f"HTML generation error: {e}", downloads_dir)

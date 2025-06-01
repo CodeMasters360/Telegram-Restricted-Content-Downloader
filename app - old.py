@@ -1,0 +1,198 @@
+import threading
+import pyperclip  # type: ignore
+import time
+import os
+import asyncio
+from typing import List
+import os
+
+from src.intro import Intro
+from src.console import Console
+from src.exceptions import NoContinueException
+from src.client import Client
+from src.fileManager import FileManager
+
+links = []
+running = True
+last_text = ""
+
+def monitor_clipboard():
+    global running, last_text
+
+    while running:
+        try:
+            current_text = pyperclip.paste()
+
+            if not current_text.startswith("https://t.me/"): raise NoContinueException()
+            if not current_text.strip(): raise NoContinueException()
+            if current_text == last_text: raise NoContinueException()
+            if current_text in links: raise NoContinueException()
+
+            last_text = current_text
+            links.append(current_text)
+
+            if len(links) == 1:
+                Console.clear()
+                Intro.create()
+                print("\n   >> LINKS CATCHED <<\n")
+
+            print(f"{len(links)}) {current_text}")
+        
+        except NoContinueException: ...
+        except Exception as e: print(e)
+
+        time.sleep(0.5)
+
+
+async def main():
+    global running, links, last_text
+
+    # Setup download directories
+    FileManager.setup_directories()
+
+    client = Client()
+    await client.start()
+
+    Console.clear()
+    Intro.create()
+
+    clipboard_thread = threading.Thread(target=monitor_clipboard, daemon=True)
+    clipboard_thread.start()
+
+    while running:
+        command = input("").strip().lower()
+
+        if command == "":
+            if not len(links):
+                print("Huh? you didn't copy any telegram media link yet...")
+                continue
+
+            print("Starting to download content...")
+            print("Note: Text content will be saved as .txt files")
+
+            await client.download_media(links)
+            
+            # Show download statistics
+            stats = FileManager.get_download_stats()
+            print(f"\nDownload Summary:")
+            print(f"  Media files: {stats['media_files']}")
+            print(f"  Text files: {stats['text_files']}")
+            print(f"  Caption files: {stats['caption_files']}")
+            
+            links = []
+            pyperclip.copy("")
+            last_text = ""
+
+        elif command == "r":
+            links = []
+            pyperclip.copy("")
+            last_text = ""
+
+            Console.clear()
+            Intro.create()
+
+        elif command.startswith("export"):
+            parts = command.split()
+            if len(parts) == 3:
+                start_link = parts[1]
+                end_link = parts[2]
+                
+                if start_link.startswith("https://t.me/") and end_link.startswith("https://t.me/"):
+                    print("Starting export process...")
+                    try:
+                        result = await client.export_message_range(start_link, end_link)
+                        if result:
+                            print(f"Export saved as: {result}")
+                            print("You can open this HTML file in your browser to view the messages.")
+                        else:
+                            print("Export completed but no file was returned.")
+                    except Exception as e:
+                        print(f"Export error: {e}")
+                        print("Attempting to create a minimal export file...")
+                        try:
+                            # Create a basic HTML file even if export fails
+                            from datetime import datetime
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            error_html = f"telegram_export_error_{timestamp}.html"
+                            error_path = f"downloads/exports/{error_html}"
+                            os.makedirs("downloads/exports", exist_ok=True)
+                            with open(error_path, 'w', encoding='utf-8') as f:
+                                f.write(f"""
+                                <!DOCTYPE html>
+                                <html>
+                                <head>
+                                    <meta charset="UTF-8">
+                                    <title>Export Error</title>
+                                    <style>
+                                        body {{font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5;}}
+                                        .error {{background: #fff; padding: 20px; border-radius: 5px; border-left: 4px solid #e74c3c;}}
+                                    </style>
+                                </head>
+                                <body>
+                                    <div class="error">
+                                        <h2>Export Failed</h2>
+                                        <p><strong>Start Link:</strong> {start_link}</p>
+                                        <p><strong>End Link:</strong> {end_link}</p>
+                                        <p><strong>Error:</strong> {str(e)}</p>
+                                        <p><strong>Time:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+                                    </div>
+                                </body>
+                                </html>
+                                """)
+                            print(f"Error report saved as: {error_html}")
+                        except Exception as e2:
+                            print(f"Could not create error report: {e2}")
+                else:
+                    print("Please provide valid Telegram links")
+            else:
+                print("Usage: export <start_link> <end_link>")
+                print("Example: export https://t.me/c/123456789/1 https://t.me/c/123456789/10")
+
+        elif command.startswith("json"):
+            parts = command.split()
+            if len(parts) == 3:
+                start_link = parts[1]
+                end_link = parts[2]
+                
+                if start_link.startswith("https://t.me/") and end_link.startswith("https://t.me/"):
+                    print("Starting JSON-only export...")
+                    result = await client.export_json_only(start_link, end_link)
+                    if result:
+                        print(f"JSON export saved as: {result}")
+                        print("This file contains complete message metadata including reply information.")
+                else:
+                    print("Please provide valid Telegram links")
+            else:
+                print("Usage: json <start_link> <end_link>")
+                print("Example: json https://t.me/c/123456789/1 https://t.me/c/123456789/10")
+
+        elif command == "stats":
+            stats = FileManager.get_download_stats()
+            print(f"\nTotal Downloads:")
+            print(f"  Total files: {stats['total_files']}")
+            print(f"  Media files: {stats['media_files']}")
+            print(f"  Text files: {stats['text_files']}")
+            print(f"  Caption files: {stats['caption_files']}")
+            
+            recent = FileManager.list_recent_files(limit=5)
+            if recent:
+                print(f"\nRecent downloads:")
+                for file in recent:
+                    print(f"  {file}")
+
+        elif command == "exit":
+            print("Exiting...")
+            running = False
+
+        else:
+            print("Available commands:")
+            print("  [Enter] - Download all queued links")
+            print("  r - Reset queue")
+            print("  export <start_link> <end_link> - Export message range to HTML with media")
+            print("  json <start_link> <end_link> - Export message range to JSON only")
+            print("  stats - Show download statistics")
+            print("  exit - Exit application")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
