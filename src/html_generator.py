@@ -380,4 +380,49 @@ class HTMLGenerator:
             <div class="file-attachment">
                 <div class="file-icon">📄</div>
                 <div class="file-info">
-                    <div class="file-name">{self.escape
+                    <div class="file-name">{self.escape_html(filename)}</div>
+                    <div class="file-size">{size}</div>
+                </div>
+            </div>
+            '''
+        
+        elif media_type == 'sticker':
+            media_html += f'<div class="media-placeholder">🎭 Sticker</div>'
+        
+        elif media_type == 'animation':
+            if media_data.get('local_path'):
+                media_html += f'<img src="{media_data["local_path"]}" alt="GIF" class="media-item">'
+            else:
+                media_html += f'<div class="media-placeholder">🎞️ GIF/Animation ({self.format_file_size(media_data.get("size", 0))})</div>'
+        
+        media_html += '</div>'
+        return media_html
+    
+    def generate_html_chat(self, messages: List[Dict[str, Any]], chat_info: Dict[str, Any] = None, stats: Dict[str, Any] = None) -> str:
+        """Generate complete HTML file for chat messages"""
+        if not chat_info:
+            chat_info = {}
+        
+        if not stats:
+            stats = {}
+        
+        chat_title = self.escape_html(chat_info.get('title', 'Telegram Chat'))
+        chat_description = self.escape_html(chat_info.get('description', ''))
+        message_range = chat_info.get('message_range', '')
+        download_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+        
+        # Generate messages HTML
+        messages_html = ""
+        for message in messages:
+            messages_html += self.generate_message_html(message)
+        
+        # Generate stats
+        total_messages = len(messages)
+        deleted_count = sum(1 for msg in messages if msg.get('deleted', False))
+        media_count = sum(1 for msg in messages if msg.get('media'))
+        text_count = total_messages - deleted_count
+        
+        stats_html = f"""
+        <div class="stats">
+            <strong>Chat Statistics</strong><br>
+            Total Messages
