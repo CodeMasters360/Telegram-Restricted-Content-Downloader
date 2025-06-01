@@ -102,7 +102,8 @@ class MessageExporter:
             'edit_date': message.edit_date.isoformat() if message.edit_date else None,
             'views': getattr(message, 'views', None),
             'entities': [],
-            'caption_entities': []
+            'caption_entities': [],
+            'reactions': []
         }
         
         # Add user information
@@ -114,11 +115,22 @@ class MessageExporter:
                 'username': message.from_user.username,
                 'is_bot': message.from_user.is_bot
             }
-        
-        # Add media information
+
+        # Add media information (use sizes for photo)
         if message.photo:
-            msg_dict['media_type'] = 'photo'
-            msg_dict['media_info'] = {'file_id': message.photo.file_id, 'file_size': getattr(message.photo, 'file_size', None)}
+            # Use the largest size available
+            if hasattr(message.photo, "sizes") and message.photo.sizes:
+                largest = max(message.photo.sizes, key=lambda s: getattr(s, "file_size", 0) or 0)
+                msg_dict['media_type'] = 'photo'
+                msg_dict['media_info'] = {
+                    'file_id': getattr(largest, 'file_id', None),
+                    'file_size': getattr(largest, 'file_size', None),
+                    'width': getattr(largest, 'width', None),
+                    'height': getattr(largest, 'height', None)
+                }
+            else:
+                msg_dict['media_type'] = 'photo'
+                msg_dict['media_info'] = {}
         elif message.video:
             msg_dict['media_type'] = 'video'
             msg_dict['media_info'] = {'file_id': message.video.file_id, 'duration': message.video.duration, 'width': message.video.width, 'height': message.video.height, 'file_size': getattr(message.video, 'file_size', None)}
@@ -134,7 +146,7 @@ class MessageExporter:
         elif message.sticker:
             msg_dict['media_type'] = 'sticker'
             msg_dict['media_info'] = {'file_id': message.sticker.file_id, 'emoji': message.sticker.emoji, 'set_name': getattr(message.sticker, 'set_name', None)}
-        
+
         # Add entities if present
         if message.entities:
             msg_dict['entities'] = [{'type': e.type, 'offset': e.offset, 'length': e.length, 'url': getattr(e, 'url', None)} for e in message.entities]
@@ -142,17 +154,71 @@ class MessageExporter:
         if message.caption_entities:
             msg_dict['caption_entities'] = [{'type': e.type, 'offset': e.offset, 'length': e.length, 'url': getattr(e, 'url', None)} for e in message.caption_entities]
         
-        # Add forward information using new forward_origin property
+        # Add forward information using forward_origin only
         if hasattr(message, 'forward_origin') and message.forward_origin:
             if hasattr(message.forward_origin, 'sender_user'):
-                msg_dict['forward_from'] = {'user_id': message.forward_origin.sender_user.id, 'first_name': message.forward_origin.sender_user.first_name, 'username': message.forward_origin.sender_user.username}
+                msg_dict['forward_from'] = {
+                    'user_id': message.forward_origin.sender_user.id,
+                    'first_name': message.forward_origin.sender_user.first_name,
+                    'username': message.forward_origin.sender_user.username
+                }
             elif hasattr(message.forward_origin, 'sender_chat'):
-                msg_dict['forward_from'] = {'chat_id': message.forward_origin.sender_chat.id, 'chat_title': message.forward_origin.sender_chat.title, 'chat_username': message.forward_origin.sender_chat.username}
-        elif message.forward_from:
-            msg_dict['forward_from'] = {'user_id': message.forward_from.id, 'first_name': message.forward_from.first_name, 'username': message.forward_from.username}
-        elif message.forward_from_chat:
-            msg_dict['forward_from'] = {'chat_id': message.forward_from_chat.id, 'chat_title': message.forward_from_chat.title, 'chat_username': message.forward_from_chat.username}
-        
+                msg_dict['forward_from'] = {
+                    'chat_id': message.forward_origin.sender_chat.id,
+                    'chat_title': message.forward_origin.sender_chat.title,
+                    'chat_username': message.forward_origin.sender_chat.username
+                }
+        # ...do not use deprecated forward_from or forward_from_chat...
+
+        # Add reactions if present (Pyrogram >=2.0)
+        try:
+            outgoing_emojis = set()
+            if hasattr(message, "outgoing_reaction") and message.outgoing_reaction:
+                for r in message.outgoing_reaction:
+                    emoji = getattr(r, "emoji", None)
+                    if emoji:
+                        outgoing_emojis.add(emoji)
+            if hasattr(message, "reactions") and message.reactions:
+                # Try .results (new Pyrogram)
+                if hasattr(message.reactions, "results") and message.reactions.results:
+                    for reaction in message.reactions.results:
+                        emoji = getattr(reaction.reaction, "emoji", None)
+                        if not emoji:
+                            custom_emoji_id = getattr(reaction.reaction, "custom_emoji_id", None)
+                            if custom_emoji_id:
+                                emoji = f"[custom:{custom_emoji_id}]"
+                        if not emoji:
+                            emoji = "[unknown]"
+                        count = getattr(reaction, "count", None)
+                        chosen = emoji in outgoing_emojis
+                        msg_dict['reactions'].append({
+                            'emoji': emoji,
+                            'count': count,
+                            'chosen': chosen
+                        })
+                # Try .reactions (fork/older Pyrogram)
+                elif hasattr(message.reactions, "reactions") and message.reactions.reactions:
+                    for reaction in message.reactions.reactions:
+                        # --- FIX: get emoji from reaction.type.emoji ---
+                        emoji = None
+                        if hasattr(reaction, "type") and hasattr(reaction.type, "emoji"):
+                            emoji = getattr(reaction.type, "emoji", None)
+                        if not emoji:
+                            custom_emoji_id = getattr(getattr(reaction, "type", None), "custom_emoji_id", None)
+                            if custom_emoji_id:
+                                emoji = f"[custom:{custom_emoji_id}]"
+                        if not emoji:
+                            emoji = "[unknown]"
+                        count = getattr(reaction, "count", None)
+                        chosen = emoji in outgoing_emojis
+                        msg_dict['reactions'].append({
+                            'emoji': emoji,
+                            'count': count,
+                            'chosen': chosen
+                        })
+        except Exception:
+            pass
+
         return msg_dict
 
     async def _get_reply_info(self, message) -> Optional[Dict]:
@@ -308,7 +374,17 @@ class MessageExporter:
                     if media_info.get('duration'):
                         info_text += f" | Duration: {media_info['duration']}s"
                     html_content += f'<div class="media-info">{info_text}</div>'
-            
+            # Show reactions if present and not empty
+            if msg_data.get('reactions') and len(msg_data['reactions']) > 0:
+                html_content += '<div class="message-reactions" style="margin-bottom:8px;">'
+                for reaction in msg_data['reactions']:
+                    emoji = reaction.get('emoji', '')
+                    count = reaction.get('count', 0)
+                    chosen = reaction.get('chosen', False)
+                    chosen_style = 'border:2px solid #0088cc;border-radius:50%;padding:2px;' if chosen else ''
+                    html_content += f'<span style="display:inline-block;margin-right:8px;font-size:18px;{chosen_style}">{emoji} <span style="font-size:13px;color:#555;">{count}</span></span>'
+                html_content += '</div>'
+
             # JSON toggle button and data
             html_content += f'<div class="json-toggle" onclick="toggleJson({msg_data["id"]})">Show/Hide JSON Data</div><div id="json-{msg_data["id"]}" class="json-data">{json.dumps(msg_data, indent=2, ensure_ascii=False)}</div></div>'
         
