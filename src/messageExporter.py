@@ -4,6 +4,11 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from src.textHandler import TextHandler
+# Add import for MessageServiceType
+try:
+    from pyrogram.enums import MessageServiceType
+except ImportError:
+    MessageServiceType = None
 
 class MessageExporter:
     def __init__(self, client):
@@ -183,8 +188,31 @@ class MessageExporter:
             'views': getattr(message, 'views', None),
             'entities': [],
             'caption_entities': [],
-            'reactions': []
+            'reactions': [],
+            'is_service': False,
+            'service_type': None,
+            'service_text': None
         }
+        
+        # Check if this is a service message
+        if TextHandler.is_service_message(message):
+            msg_dict['is_service'] = True
+            # Try to get the enum type if available
+            service_type_name = None
+            service_type_class = type(message.service).__name__ if message.service else None
+            if hasattr(message.service, "type"):
+                # If it's a Pyrogram MessageServiceType enum, get its name
+                try:
+                    service_type_enum = message.service.type
+                    if hasattr(service_type_enum, "name"):
+                        service_type_name = service_type_enum.name
+                    else:
+                        service_type_name = str(service_type_enum)
+                except Exception:
+                    service_type_name = None
+            msg_dict['service_type'] = service_type_name or service_type_class
+            msg_dict['service_type_class'] = service_type_class
+            msg_dict['service_text'] = TextHandler.extract_service_message_text(message)
         
         # Add user information
         if message.from_user:
@@ -407,8 +435,9 @@ class MessageExporter:
             # Count failed and successful messages
             failed_messages = [msg for msg in messages_data if 'error' in msg]
             successful_messages = [msg for msg in messages_data if 'error' not in msg]
+            service_messages = [msg for msg in successful_messages if msg.get('is_service')]
             
-            html_content = f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Telegram Export with JSON Data</title><style>body{{font-family:Arial,sans-serif;margin:20px;background:#f5f5f5}}h1{{color:#0088cc;text-align:center}}h2{{color:#333;border-bottom:2px solid #0088cc;padding-bottom:5px}}.export-info{{background:#fff;padding:15px;margin-bottom:20px;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}.message{{background:#fff;margin-bottom:15px;padding:15px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);position:relative;transition:all 0.3s ease}}.message-header{{font-size:12px;color:#666;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px}}.message-text{{line-height:1.6;margin-bottom:10px}}.message-media{{margin:10px 0}}img{{max-width:100%;height:auto;border-radius:5px}}video{{max-width:100%;height:auto;border-radius:5px}}audio{{width:100%}}.media-file{{background:#f9f9f9;padding:10px;border-radius:5px;margin:5px 0}}.caption{{font-style:italic;color:#666;margin-top:10px}}.reply-info{{background:#e8f4fd;border-left:4px solid #0088cc;padding:10px;margin:10px 0;border-radius:0 5px 5px 0;cursor:pointer;transition:background 0.2s ease}}.reply-info:hover{{background:#d4edda}}.reply-preview{{font-size:14px;color:#555}}.json-toggle{{background:#f0f0f0;border:1px solid #ccc;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-top:10px;display:inline-block}}.json-data{{display:none;background:#2d2d2d;color:#f8f8f2;padding:15px;border-radius:5px;margin-top:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:300px;overflow-y:auto}}.stats{{background:#e8f4fd;padding:10px;border-radius:5px;margin-top:20px}}.media-info{{font-size:12px;color:#888;margin-top:5px}}.highlight{{background:#ffeb3b!important;border:2px solid #ff9800!important;transform:scale(1.02)}}.reply-link{{color:#0088cc;text-decoration:underline}}</style><script>function toggleJson(id){{var elem=document.getElementById("json-"+id);elem.style.display=elem.style.display==="none"?"block":"none"}}function scrollToMessage(messageId){{var targetMsg=document.getElementById("msg-"+messageId);if(targetMsg){{targetMsg.scrollIntoView({{behavior:"smooth",block:"center"}});targetMsg.classList.add("highlight");setTimeout(function(){{targetMsg.classList.remove("highlight")}},1000)}}else{{alert("Replied message not found in this export range")}}}}window.onload=function(){{document.querySelectorAll(".reply-info").forEach(function(elem){{elem.addEventListener("click",function(){{var messageId=this.getAttribute("data-reply-to");if(messageId)scrollToMessage(messageId)}})}})}};</script></head><body><h1>Telegram Messages Export with JSON Data</h1><div class="export-info"><h2>Export Information</h2><p><strong>Export Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p><p><strong>Start Link:</strong> <a href="{start_link}" target="_blank">{start_link}</a></p><p><strong>End Link:</strong> <a href="{end_link}" target="_blank">{end_link}</a></p><p><strong>Total Messages:</strong> {len(messages_data)}</p><p><strong>Successful:</strong> {len(successful_messages)}</p><p><strong>Failed:</strong> {len(failed_messages)}</p></div><h2>Messages</h2>'
+            html_content = f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Telegram Export with JSON Data</title><style>body{{font-family:Arial,sans-serif;margin:20px;background:#f5f5f5}}h1{{color:#0088cc;text-align:center}}h2{{color:#333;border-bottom:2px solid #0088cc;padding-bottom:5px}}.export-info{{background:#fff;padding:15px;margin-bottom:20px;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}.message{{background:#fff;margin-bottom:15px;padding:15px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);position:relative;transition:all 0.3s ease}}.service-message{{background:#f8f9fa;border-left:4px solid #6c757d;font-style:italic}}.message-header{{font-size:12px;color:#666;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px}}.message-text{{line-height:1.6;margin-bottom:10px}}.service-text{{color:#6c757d;font-weight:500;text-align:center;padding:10px}}.message-media{{margin:10px 0}}img{{max-width:100%;height:auto;border-radius:5px}}video{{max-width:100%;height:auto;border-radius:5px}}audio{{width:100%}}.media-file{{background:#f9f9f9;padding:10px;border-radius:5px;margin:5px 0}}.caption{{font-style:italic;color:#666;margin-top:10px}}.reply-info{{background:#e8f4fd;border-left:4px solid #0088cc;padding:10px;margin:10px 0;border-radius:0 5px 5px 0;cursor:pointer;transition:background 0.2s ease}}.reply-info:hover{{background:#d4edda}}.reply-preview{{font-size:14px;color:#555}}.json-toggle{{background:#f0f0f0;border:1px solid #ccc;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-top:10px;display:inline-block}}.json-data{{display:none;background:#2d2d2d;color:#f8f8f2;padding:15px;border-radius:5px;margin-top:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:300px;overflow-y:auto}}.stats{{background:#e8f4fd;padding:10px;border-radius:5px;margin-top:20px}}.media-info{{font-size:12px;color:#888;margin-top:5px}}.highlight{{background:#ffeb3b!important;border:2px solid #ff9800!important;transform:scale(1.02)}}.reply-link{{color:#0088cc;text-decoration:underline}}</style><script>function toggleJson(id){{var elem=document.getElementById("json-"+id);elem.style.display=elem.style.display==="none"?"block":"none"}}function scrollToMessage(messageId){{var targetMsg=document.getElementById("msg-"+messageId);if(targetMsg){{targetMsg.scrollIntoView({{behavior:"smooth",block:"center"}});targetMsg.classList.add("highlight");setTimeout(function(){{targetMsg.classList.remove("highlight")}},1000)}}else{{alert("Replied message not found in this export range")}}}}window.onload=function(){{document.querySelectorAll(".reply-info").forEach(function(elem){{elem.addEventListener("click",function(){{var messageId=this.getAttribute("data-reply-to");if(messageId)scrollToMessage(messageId)}})}})}};</script></head><body><h1>Telegram Messages Export with JSON Data</h1><div class="export-info"><h2>Export Information</h2><p><strong>Export Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p><p><strong>Start Link:</strong> <a href="{start_link}" target="_blank">{start_link}</a></p><p><strong>End Link:</strong> <a href="{end_link}" target="_blank">{end_link}</a></p><p><strong>Total Messages:</strong> {len(messages_data)}</p><p><strong>Successful:</strong> {len(successful_messages)}</p><p><strong>Service Messages:</strong> {len(service_messages)}</p><p><strong>Failed:</strong> {len(failed_messages)}</p></div><h2>Messages</h2>'
             
             for msg_data in messages_data:
                 # If this is an error/log placeholder, render with clickable failed link
@@ -435,6 +464,77 @@ class MessageExporter:
                         f'<div style="margin-top:10px;"><strong>Check manually:</strong> <a href="{failed_link}" target="_blank" style="color:#0088cc;">{failed_link}</a></div>'
                         f'</div>'
                     )
+                    continue
+
+                # Handle service messages with special styling
+                if msg_data.get('is_service'):
+                    service_text = msg_data.get('service_text', 'Service message')
+                    service_type = msg_data.get('service_type', 'Unknown')
+                    service_type_class = msg_data.get('service_type_class', '')
+                    msg_date = msg_data.get('date', 'Unknown')
+                    html_content += f'<div class="message service-message" id="msg-{msg_data["id"]}">'
+                    html_content += (
+                        f'<div class="message-header">'
+                        f'<b>Service Message</b> | ID: {msg_data["id"]} | Date: {msg_date} | '
+                        f'<span style="color:#0088cc;">Type: {service_type}'
+                    )
+                    if service_type_class and service_type_class != service_type:
+                        html_content += f' <span style="color:#888;">({service_type_class})</span>'
+                    html_content += '</span></div>'
+
+                    # --- Show details for PINNED_MESSAGE and NEW_CHAT_MEMBERS ---
+                    # We need to check the original message object for these fields
+                    # Find the original message object in messages_data (if available)
+                    original_message = None
+                    if 'original_message_obj' in msg_data:
+                        original_message = msg_data['original_message_obj']
+                    # If not present, skip (for future extension)
+
+                    # For PINNED_MESSAGE, show info about the pinned message
+                    if service_type == "PINNED_MESSAGE":
+                        # Try to get pinned_message info from msg_data if available
+                        pinned_info = ""
+                        try:
+                            # If you want to show the pinned message text, you need to fetch it from the message object
+                            # But here, we only have the dict, so we can't fetch it unless you store it in msg_data
+                            # So, recommend to add this in _message_to_dict if needed
+                            pinned_message_id = None
+                            if hasattr(original_message, "pinned_message") and original_message.pinned_message:
+                                pinned_message_id = getattr(original_message.pinned_message, "id", None)
+                                pinned_text = getattr(original_message.pinned_message, "text", None)
+                                pinned_caption = getattr(original_message.pinned_message, "caption", None)
+                                pinned_content = pinned_text or pinned_caption or ""
+                                pinned_info = f'<div><b>Pinned Message ID:</b> {pinned_message_id}</div>'
+                                if pinned_content:
+                                    pinned_info += f'<div><b>Pinned Content:</b> {pinned_content}</div>'
+                            elif "pinned_message_id" in msg_data:
+                                pinned_info = f'<div><b>Pinned Message ID:</b> {msg_data["pinned_message_id"]}</div>'
+                        except Exception:
+                            pass
+                        if pinned_info:
+                            html_content += f'<div class="service-text" style="background:#e3f2fd;">{pinned_info}</div>'
+
+                    # For NEW_CHAT_MEMBERS, show info about the new members
+                    if service_type == "NEW_CHAT_MEMBERS":
+                        members_info = ""
+                        try:
+                            if hasattr(original_message, "new_chat_members") and original_message.new_chat_members:
+                                members = original_message.new_chat_members
+                                members_info = "<div><b>New Members Joined:</b> " + ", ".join(
+                                    [getattr(u, "first_name", "Unknown") for u in members]
+                                ) + "</div>"
+                        except Exception:
+                            pass
+                        if members_info:
+                            html_content += f'<div class="service-text" style="background:#e3f2fd;">{members_info}</div>'
+
+                    html_content += f'<div class="service-text">{service_text}</div>'
+                    # JSON toggle button and data for service messages
+                    try:
+                        json_data_str = json.dumps(msg_data, indent=2, ensure_ascii=False, default=str)
+                    except Exception as e:
+                        json_data_str = f"Could not serialize message: {e}"
+                    html_content += f'<div class="json-toggle" onclick="toggleJson({msg_data["id"]})">Show/Hide JSON Data</div><div id="json-{msg_data["id"]}" class="json-data">{json_data_str}</div></div>'
                     continue
 
                 # Compose sender display: Name (id) [@username]
@@ -479,18 +579,36 @@ class MessageExporter:
                     filename = os.path.basename(media_path)
                     file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
                     relative_path = os.path.relpath(media_path, downloads_dir).replace('\\', '/')
-                    
-                    if file_ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+
+                    # --- Sticker and animation/gif support ---
+                    # Fixed stickers are webp, animated stickers are webm, GIFs are gif/mp4 (prefer gif if available)
+                    if file_ext in ['jpg', 'jpeg', 'png']:
                         html_content += f'<div class="message-media"><img src="{relative_path}" alt="Image"></div>'
-                    elif file_ext in ['mp4', 'avi', 'mov', 'webm']:
-                        html_content += f'<div class="message-media"><video controls><source src="{relative_path}" type="video/{file_ext}">Your browser does not support video.</video></div>'
+                    elif file_ext == 'webp':
+                        # Fixed sticker (static)
+                        html_content += f'<div class="message-media"><img src="{relative_path}" alt="Sticker" style="max-width:128px;background:#eee;"><div class="media-info">Sticker (.webp)</div></div>'
+                    elif file_ext in ['mp4', 'webm']:
+                        # mp4/webm can be video, animated sticker, or gif (Telegram GIFs are mp4, but if .gif exists, prefer .gif)
+                        # Check if a .gif file exists for this media (same base name)
+                        gif_path = os.path.splitext(media_path)[0] + ".gif"
+                        gif_rel = os.path.relpath(gif_path, downloads_dir).replace('\\', '/')
+                        if os.path.exists(gif_path):
+                            html_content += f'<div class="message-media"><img src="{gif_rel}" alt="GIF"></div>'
+                        elif msg_data.get('media_type') == 'sticker':
+                            html_content += f'<div class="message-media"><video autoplay loop muted playsinline style="background:#eee;max-width:128px;"><source src="{relative_path}" type="video/{file_ext}">Your browser does not support animated stickers.</video><div class="media-info">Animated Sticker (.{file_ext})</div></div>'
+                        else:
+                            html_content += f'<div class="message-media"><video controls loop autoplay muted playsinline><source src="{relative_path}" type="video/{file_ext}">Your browser does not support video or GIFs. (Telegram GIFs are mp4 files)</video></div>'
+                    elif file_ext == 'gif':
+                        html_content += f'<div class="message-media"><img src="{relative_path}" alt="GIF"></div>'
+                    elif file_ext == 'tgs':
+                        # Lottie animation, not viewable in browser
+                        html_content += f'<div class="media-file">🗂️ <a href="{relative_path}" target="_blank">{filename}</a> <span class="media-info">(Telegram animated sticker .tgs - not viewable in browser)</span></div>'
                     elif file_ext in ['mp3', 'wav', 'ogg', 'opus', 'oga']:
-                        # Play oga files in internal player, set correct MIME type for oga
                         audio_type = "audio/ogg" if file_ext == "oga" else f"audio/{file_ext}"
                         html_content += f'<div class="message-media"><audio controls><source src="{relative_path}" type="{audio_type}">Your browser does not support audio.</audio></div>'
                     else:
                         html_content += f'<div class="media-file">📁 <a href="{relative_path}" target="_blank">{filename}</a></div>'
-                    
+
                     # Add media info
                     if msg_data.get('media_info'):
                         media_info = msg_data['media_info']
@@ -519,10 +637,10 @@ class MessageExporter:
             
             # Add statistics
             media_count = len(media_files)
-            text_only_count = len([m for m in successful_messages if (m.get('text') or m.get('caption')) and not m.get('media_type')])
+            text_only_count = len([m for m in successful_messages if (m.get('text') or m.get('caption')) and not m.get('media_type') and not m.get('is_service')])
             reply_count = len([m for m in successful_messages if m.get('reply_to')])
             
-            html_content += f'<div class="stats"><h2>Export Statistics</h2><p>Total Messages: {len(messages_data)}</p><p>Successfully Exported: {len(successful_messages)}</p><p>Failed Messages: {len(failed_messages)}</p><p>Messages with Media: {media_count}</p><p>Text-only Messages: {text_only_count}</p><p>Reply Messages: {reply_count}</p></div></body></html>'
+            html_content += f'<div class="stats"><h2>Export Statistics</h2><p>Total Messages: {len(messages_data)}</p><p>Successfully Exported: {len(successful_messages)}</p><p>Service Messages: {len(service_messages)}</p><p>Failed Messages: {len(failed_messages)}</p><p>Messages with Media: {media_count}</p><p>Text-only Messages: {text_only_count}</p><p>Reply Messages: {reply_count}</p></div></body></html>'
             
             # Always try to write the HTML file, even if there were errors
             with open(html_path, 'w', encoding='utf-8') as f:

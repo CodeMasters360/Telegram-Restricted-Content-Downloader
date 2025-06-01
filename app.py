@@ -78,7 +78,8 @@ async def main():
             print(f"  Media files: {stats['media_files']}")
             print(f"  Text files: {stats['text_files']}")
             print(f"  Caption files: {stats['caption_files']}")
-            
+            print(f"  Service messages: {stats['service_files']}")
+
             links = []
             pyperclip.copy("")
             last_text = ""
@@ -134,7 +135,8 @@ async def main():
             print(f"  Media files: {stats['media_files']}")
             print(f"  Text files: {stats['text_files']}")
             print(f"  Caption files: {stats['caption_files']}")
-            
+            print(f"  Service messages: {stats['service_files']}")
+
             recent = FileManager.list_recent_files(limit=5)
             if recent:
                 print(f"\nRecent downloads:")

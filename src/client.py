@@ -70,10 +70,26 @@ class Client():
         try:
             media_count = 0
             text_count = 0
+            service_count = 0
             
             for i, link in enumerate(links):
                 message = await self._get_media_by_link(link)
                 if not message: 
+                    continue
+
+                # Check if this is a service message
+                if TextHandler.is_service_message(message):
+                    service_text = TextHandler.extract_service_message_text(message)
+                    if service_text:
+                        filename = TextHandler.save_text_content(
+                            service_text, link, "downloads/service_messages"
+                        )
+                        if filename:
+                            service_count += 1
+                            Console.clear()
+                            Intro.create()
+                            print(f"Service message saved as: {filename}")
+                            print(f"Service messages saved: {service_count}")
                     continue
 
                 # Check if message has text content
@@ -122,6 +138,8 @@ class Client():
                 print(f"Media files downloaded: {media_count}")
             if text_count > 0:
                 print(f"Text files saved: {text_count}")
+            if service_count > 0:
+                print(f"Service messages saved: {service_count}")
         
         except Exception as e:
             print(f"Download process error: {e}")

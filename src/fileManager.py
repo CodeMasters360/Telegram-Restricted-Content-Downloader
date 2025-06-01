@@ -12,6 +12,7 @@ class FileManager:
             "downloads/media", 
             "downloads/text",
             "downloads/captions",
+            "downloads/service_messages",
             "downloads/exports",
             "downloads/exports/media"
         ]
@@ -30,7 +31,8 @@ class FileManager:
             "total_files": 0,
             "text_files": 0,
             "media_files": 0,
-            "caption_files": 0
+            "caption_files": 0,
+            "service_files": 0
         }
         
         if not os.path.exists(base_dir):
@@ -43,6 +45,8 @@ class FileManager:
                 if file.endswith('.txt'):
                     if 'captions' in root:
                         stats["caption_files"] += 1
+                    elif 'service_messages' in root:
+                        stats["service_files"] += 1
                     else:
                         stats["text_files"] += 1
                 else:
