@@ -538,9 +538,16 @@ class MessageExporter:
                     continue
 
                 # Compose sender display: Name (id) [@username]
-                sender_name = msg_data.get('from_user', {}).get('first_name', 'Channel') if msg_data.get('from_user') else 'Channel'
-                sender_id = msg_data.get('from_user', {}).get('id', None)
-                sender_username = msg_data.get('from_user', {}).get('username', None)
+                from_user = msg_data.get('from_user')
+                if from_user:
+                    sender_name = from_user.get('first_name') or from_user.get('last_name') or from_user.get('username') or "Deleted Account"
+                    sender_id = from_user.get('id')
+                    sender_username = from_user.get('username')
+                else:
+                    sender_name = "Deleted Account"
+                    sender_id = None
+                    sender_username = None
+
                 sender_info = sender_name
                 if sender_id is not None:
                     sender_info += f' (id: {sender_id})'
