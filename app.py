@@ -99,16 +99,19 @@ async def main():
                 end_link = parts[2]
                 
                 if start_link.startswith("https://t.me/") and end_link.startswith("https://t.me/"):
-                    print("Starting export process...")
+                    print("🔄 Starting export process...")
                     result = await client.export_message_range(start_link, end_link)
                     if result:
-                        print(f"Export saved as: {result}")
-                        print("You can open this HTML file in your browser to view the messages.")
+                        print(f"\n🎉 Export completed! Files saved in downloads/exports/")
+                        print("   📄 HTML file with embedded media and interactive features")
+                        print("   🎨 CSS file for styling")
+                        print("   ⚡ JavaScript file for interactivity")
                 else:
-                    print("Please provide valid Telegram links")
+                    print("❌ Please provide valid Telegram links")
             else:
-                print("Usage: export <start_link> <end_link>")
-                print("Example: export https://t.me/c/123456789/1 https://t.me/c/123456789/10")
+                print("📚 Usage: export <start_link> <end_link>")
+                print("📝 Example: export https://t.me/c/123456789/1 https://t.me/c/123456789/10")
+                print("ℹ️  This will create HTML, CSS, and JS files with parallel downloading")
 
         elif command.startswith("json"):
             parts = command.split()
@@ -117,16 +120,17 @@ async def main():
                 end_link = parts[2]
                 
                 if start_link.startswith("https://t.me/") and end_link.startswith("https://t.me/"):
-                    print("Starting JSON-only export...")
+                    print("📊 Starting JSON-only export...")
                     result = await client.export_json_only(start_link, end_link)
                     if result:
-                        print(f"JSON export saved as: {result}")
-                        print("This file contains complete message metadata including reply information.")
+                        print(f"✅ JSON export saved as: {result}")
+                        print("📋 This file contains complete message metadata including reply information.")
                 else:
-                    print("Please provide valid Telegram links")
+                    print("❌ Please provide valid Telegram links")
             else:
-                print("Usage: json <start_link> <end_link>")
-                print("Example: json https://t.me/c/123456789/1 https://t.me/c/123456789/10")
+                print("📚 Usage: json <start_link> <end_link>")
+                print("📝 Example: json https://t.me/c/123456789/1 https://t.me/c/123456789/10")
+                print("ℹ️  This creates only JSON file without downloading media (faster)")
 
         elif command == "stats":
             stats = FileManager.get_download_stats()
@@ -148,13 +152,18 @@ async def main():
             running = False
 
         else:
-            print("Available commands:")
+            print("📋 Available commands:")
             print("  [Enter] - Download all queued links")
             print("  r - Reset queue")
-            print("  export <start_link> <end_link> - Export message range to HTML with media")
-            print("  json <start_link> <end_link> - Export message range to JSON only")
+            print("  export <start_link> <end_link> - Export message range to HTML with media (parallel)")
+            print("  json <start_link> <end_link> - Export message range to JSON only (fast)")
             print("  stats - Show download statistics")
             print("  exit - Exit application")
+            print()
+            print("💡 Tips:")
+            print("  • Export uses parallel downloading for faster processing")
+            print("  • HTML exports create separate CSS and JS files for better organization")
+            print("  • Progress bars show real-time status during exports")
 
 
 if __name__ == "__main__":

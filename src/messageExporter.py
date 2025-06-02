@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import asyncio
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from src.textHandler import TextHandler
@@ -14,9 +15,11 @@ class MessageExporter:
     def __init__(self, client):
         self.client = client
         self.exported_media = []
+        self.total_messages = 0
+        self.processed_messages = 0
         
     async def export_message_range(self, start_link: str, end_link: str, downloads_dir: str = "downloads/exports") -> str:
-        """Export messages between start_link and end_link and create HTML file"""
+        """Export messages between start_link and end_link and create HTML file with parallel processing"""
         try:
             if not os.path.exists(downloads_dir):
                 os.makedirs(downloads_dir)
@@ -32,13 +35,24 @@ class MessageExporter:
             start_msg_id = min(start_info['message_id'], end_info['message_id'])
             end_msg_id = max(start_info['message_id'], end_info['message_id'])
             
-            # Get all messages in range with full JSON data
-            messages_data = await self._get_messages_with_json(chat_id, start_msg_id, end_msg_id)
+            self.total_messages = end_msg_id - start_msg_id + 1
+            self.processed_messages = 0
             
-            # Download media files
-            media_files = await self._download_range_media(messages_data, downloads_dir)
+            print(f"Starting export of {self.total_messages} messages...")
             
-            # Generate HTML file with JSON data and reply info
+            # Get all messages in range with full JSON data using parallel processing
+            messages_data = await self._get_messages_with_json_parallel(chat_id, start_msg_id, end_msg_id)
+            
+            print("Downloading media files...")
+            # Download media files in parallel
+            media_files = await self._download_range_media_parallel(messages_data, downloads_dir)
+            
+            print("Generating files...")
+            # Create separate CSS and JS files
+            self._create_css_file(downloads_dir)
+            self._create_js_file(downloads_dir)
+            
+            # Generate HTML file with external CSS/JS references
             html_filename = self._generate_enhanced_html_export(messages_data, media_files, downloads_dir, start_link, end_link)
             
             # Also save JSON file
@@ -49,6 +63,343 @@ class MessageExporter:
             # If everything fails, create a minimal error HTML file
             print(f"Critical export error: {e}")
             return self._create_emergency_html(start_link, end_link, str(e), downloads_dir)
+
+    async def _get_messages_with_json_parallel(self, chat_id: str, start_msg_id: int, end_msg_id: int, batch_size: int = 10) -> List[Dict]:
+        """Get messages with complete JSON data and reply information using parallel processing"""
+        all_message_ids = list(range(start_msg_id, end_msg_id + 1))
+        messages_data = []
+        
+        # Process messages in batches
+        for i in range(0, len(all_message_ids), batch_size):
+            batch_ids = all_message_ids[i:i + batch_size]
+            
+            # Create tasks for parallel processing
+            tasks = [self._get_single_message_with_json(chat_id, msg_id) for msg_id in batch_ids]
+            
+            # Execute batch in parallel
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            for msg_id, result in zip(batch_ids, batch_results):
+                if isinstance(result, Exception):
+                    messages_data.append({
+                        'id': msg_id,
+                        'error': f"Could not get message {msg_id}: {result}",
+                        'log': f"Could not get message {msg_id}: {result}",
+                        'date': None
+                    })
+                else:
+                    messages_data.append(result)
+                
+                self.processed_messages += 1
+                self._print_progress("Fetching messages")
+        
+        # Sort messages by ID to maintain order
+        messages_data.sort(key=lambda x: x['id'])
+        return messages_data
+
+    async def _get_single_message_with_json(self, chat_id: str, msg_id: int) -> Dict:
+        """Get a single message with JSON data"""
+        try:
+            message = await self.client.get_messages(chat_id=chat_id, message_ids=msg_id)
+            if message and not message.empty:
+                try:
+                    # Convert message to dict and add extra metadata
+                    msg_dict = self._message_to_dict(message)
+                    # Add reply information
+                    reply_info = await self._get_reply_info(message)
+                    if reply_info:
+                        msg_dict['reply_to'] = reply_info
+                    # Try to make it JSON serializable (test only, not for saving)
+                    json.dumps(msg_dict, ensure_ascii=False, default=str)
+                    return msg_dict
+                except Exception as e:
+                    # If serialization fails, add error placeholder
+                    return {
+                        'id': msg_id,
+                        'error': f"Could not serialize message {msg_id}: {e}",
+                        'log': f"Could not serialize message {msg_id}: {e}",
+                        'date': getattr(message, "date", None)
+                    }
+            else:
+                # Message is empty or not found
+                return {
+                    'id': msg_id,
+                    'error': f"Message {msg_id} not found or is empty.",
+                    'log': f"Message {msg_id} not found or is empty.",
+                    'date': None
+                }
+        except Exception as e:
+            # Log the error for this message and continue
+            return {
+                'id': msg_id,
+                'error': f"Could not get message {msg_id}: {e}",
+                'log': f"Could not get message {msg_id}: {e}",
+                'date': None
+            }
+
+    async def _download_range_media_parallel(self, messages_data: List[Dict], downloads_dir: str, batch_size: int = 5) -> List[Dict]:
+        """Download media files for all messages using parallel processing"""
+        media_messages = [msg for msg in messages_data if msg.get('media_type') and 'error' not in msg]
+        media_files = []
+        processed_media = 0
+        
+        if not media_messages:
+            return media_files
+        
+        print(f"Found {len(media_messages)} messages with media")
+        
+        # Process media downloads in smaller batches to avoid overwhelming the client
+        for i in range(0, len(media_messages), batch_size):
+            batch = media_messages[i:i + batch_size]
+            
+            # Create tasks for parallel media download
+            tasks = [self._download_single_media(msg_data, downloads_dir) for msg_data in batch]
+            
+            # Execute batch in parallel
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            for msg_data, result in zip(batch, batch_results):
+                if isinstance(result, Exception):
+                    print(f"Failed to download media for message {msg_data['id']}: {result}")
+                elif result:
+                    media_files.append(result)
+                
+                processed_media += 1
+                self._print_progress(f"Downloading media ({processed_media}/{len(media_messages)})")
+        
+        return media_files
+
+    async def _download_single_media(self, msg_data: Dict, downloads_dir: str) -> Optional[Dict]:
+        """Download media for a single message"""
+        try:
+            # Reconstruct message for download
+            message = await self.client.get_messages(chat_id=msg_data['chat_id'], message_ids=msg_data['id'])
+            if message and not message.empty:
+                media_path = await self.client.download_media(message, file_name=f"{downloads_dir}/media/")
+                if media_path:
+                    return {'message_id': msg_data['id'], 'path': media_path}
+        except Exception as e:
+            raise Exception(f"Could not download media for message {msg_data['id']}: {e}")
+        return None
+
+    def _print_progress(self, operation: str):
+        """Print progress bar for current operation"""
+        if self.total_messages > 0:
+            percentage = (self.processed_messages / self.total_messages) * 100
+            bar_length = 30
+            filled_length = int(bar_length * percentage // 100)
+            bar = '█' * filled_length + '░' * (bar_length - filled_length)
+            print(f"\r{operation}: [{bar}] {percentage:.1f}% ({self.processed_messages}/{self.total_messages})", end='', flush=True)
+            if self.processed_messages == self.total_messages:
+                print()  # New line when complete
+
+    def _create_css_file(self, downloads_dir: str):
+        """Create separate CSS file"""
+        css_content = """
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #f5f5f5;
+}
+
+h1 {
+    color: #0088cc;
+    text-align: center;
+}
+
+h2 {
+    color: #333;
+    border-bottom: 2px solid #0088cc;
+    padding-bottom: 5px;
+}
+
+.export-info {
+    background: #fff;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.message {
+    background: #fff;
+    margin-bottom: 15px;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.service-message {
+    background: #f8f9fa;
+    border-left: 4px solid #6c757d;
+    font-style: italic;
+}
+
+.message-header {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+.message-text {
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+.service-text {
+    color: #6c757d;
+    font-weight: 500;
+    text-align: center;
+    padding: 10px;
+}
+
+.message-media {
+    margin: 10px 0;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 5px;
+}
+
+video {
+    max-width: 100%;
+    height: auto;
+    border-radius: 5px;
+}
+
+audio {
+    width: 100%;
+}
+
+.media-file {
+    background: #f9f9f9;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 5px 0;
+}
+
+.caption {
+    font-style: italic;
+    color: #666;
+    margin-top: 10px;
+}
+
+.reply-info {
+    background: #e8f4fd;
+    border-left: 4px solid #0088cc;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 0 5px 5px 0;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.reply-info:hover {
+    background: #d4edda;
+}
+
+.reply-preview {
+    font-size: 14px;
+    color: #555;
+}
+
+.json-toggle {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-top: 10px;
+    display: inline-block;
+}
+
+.json-data {
+    display: none;
+    background: #2d2d2d;
+    color: #f8f8f2;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 10px;
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.stats {
+    background: #e8f4fd;
+    padding: 10px;
+    border-radius: 5px;
+    margin-top: 20px;
+}
+
+.media-info {
+    font-size: 12px;
+    color: #888;
+    margin-top: 5px;
+}
+
+.highlight {
+    background: #ffeb3b !important;
+    border: 2px solid #ff9800 !important;
+    transform: scale(1.02);
+}
+
+.reply-link {
+    color: #0088cc;
+    text-decoration: underline;
+}
+"""
+        css_path = os.path.join(downloads_dir, "export_styles.css")
+        with open(css_path, 'w', encoding='utf-8') as f:
+            f.write(css_content)
+
+    def _create_js_file(self, downloads_dir: str):
+        """Create separate JavaScript file"""
+        js_content = """
+function toggleJson(id) {
+    var elem = document.getElementById("json-" + id);
+    elem.style.display = elem.style.display === "none" ? "block" : "none";
+}
+
+function scrollToMessage(messageId) {
+    var targetMsg = document.getElementById("msg-" + messageId);
+    if (targetMsg) {
+        targetMsg.scrollIntoView({
+            behavior: "smooth",
+            block: "center"
+        });
+        targetMsg.classList.add("highlight");
+        setTimeout(function() {
+            targetMsg.classList.remove("highlight");
+        }, 1000);
+    } else {
+        alert("Replied message not found in this export range");
+    }
+}
+
+window.onload = function() {
+    document.querySelectorAll(".reply-info").forEach(function(elem) {
+        elem.addEventListener("click", function() {
+            var messageId = this.getAttribute("data-reply-to");
+            if (messageId) scrollToMessage(messageId);
+        });
+    });
+};
+"""
+        js_path = os.path.join(downloads_dir, "export_scripts.js")
+        with open(js_path, 'w', encoding='utf-8') as f:
+            f.write(js_content)
 
     def _create_emergency_html(self, start_link: str, end_link: str, error_msg: str, downloads_dir: str) -> str:
         """Create emergency HTML file when export completely fails"""
@@ -423,7 +774,7 @@ class MessageExporter:
             return None
     
     def _generate_enhanced_html_export(self, messages_data: List[Dict], media_files: List[Dict], downloads_dir: str, start_link: str, end_link: str) -> str:
-        """Generate enhanced HTML file with JSON data and reply information"""
+        """Generate enhanced HTML file with external CSS and JS references"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             html_filename = f"telegram_export_{timestamp}.html"
@@ -437,31 +788,36 @@ class MessageExporter:
             successful_messages = [msg for msg in messages_data if 'error' not in msg]
             service_messages = [msg for msg in successful_messages if msg.get('is_service')]
             
-            html_content = f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Telegram Export with JSON Data</title><style>body{{font-family:Arial,sans-serif;margin:20px;background:#f5f5f5}}h1{{color:#0088cc;text-align:center}}h2{{color:#333;border-bottom:2px solid #0088cc;padding-bottom:5px}}.export-info{{background:#fff;padding:15px;margin-bottom:20px;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}.message{{background:#fff;margin-bottom:15px;padding:15px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);position:relative;transition:all 0.3s ease}}.service-message{{background:#f8f9fa;border-left:4px solid #6c757d;font-style:italic}}.message-header{{font-size:12px;color:#666;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px}}.message-text{{line-height:1.6;margin-bottom:10px}}.service-text{{color:#6c757d;font-weight:500;text-align:center;padding:10px}}.message-media{{margin:10px 0}}img{{max-width:100%;height:auto;border-radius:5px}}video{{max-width:100%;height:auto;border-radius:5px}}audio{{width:100%}}.media-file{{background:#f9f9f9;padding:10px;border-radius:5px;margin:5px 0}}.caption{{font-style:italic;color:#666;margin-top:10px}}.reply-info{{background:#e8f4fd;border-left:4px solid #0088cc;padding:10px;margin:10px 0;border-radius:0 5px 5px 0;cursor:pointer;transition:background 0.2s ease}}.reply-info:hover{{background:#d4edda}}.reply-preview{{font-size:14px;color:#555}}.json-toggle{{background:#f0f0f0;border:1px solid #ccc;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-top:10px;display:inline-block}}.json-data{{display:none;background:#2d2d2d;color:#f8f8f2;padding:15px;border-radius:5px;margin-top:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:300px;overflow-y:auto}}.stats{{background:#e8f4fd;padding:10px;border-radius:5px;margin-top:20px}}.media-info{{font-size:12px;color:#888;margin-top:5px}}.highlight{{background:#ffeb3b!important;border:2px solid #ff9800!important;transform:scale(1.02)}}.reply-link{{color:#0088cc;text-decoration:underline}}</style><script>function toggleJson(id){{var elem=document.getElementById("json-"+id);elem.style.display=elem.style.display==="none"?"block":"none"}}function scrollToMessage(messageId){{var targetMsg=document.getElementById("msg-"+messageId);if(targetMsg){{targetMsg.scrollIntoView({{behavior:"smooth",block:"center"}});targetMsg.classList.add("highlight");setTimeout(function(){{targetMsg.classList.remove("highlight")}},1000)}}else{{alert("Replied message not found in this export range")}}}}window.onload=function(){{document.querySelectorAll(".reply-info").forEach(function(elem){{elem.addEventListener("click",function(){{var messageId=this.getAttribute("data-reply-to");if(messageId)scrollToMessage(messageId)}})}})}};</script></head><body><h1>Telegram Messages Export with JSON Data</h1><div class="export-info"><h2>Export Information</h2><p><strong>Export Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p><p><strong>Start Link:</strong> <a href="{start_link}" target="_blank">{start_link}</a></p><p><strong>End Link:</strong> <a href="{end_link}" target="_blank">{end_link}</a></p><p><strong>Total Messages:</strong> {len(messages_data)}</p><p><strong>Successful:</strong> {len(successful_messages)}</p><p><strong>Service Messages:</strong> {len(service_messages)}</p><p><strong>Failed:</strong> {len(failed_messages)}</p></div><h2>Messages</h2>'
+            # HTML header with external CSS and JS references
+            html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Telegram Export with JSON Data</title>
+    <link rel="stylesheet" href="export_styles.css">
+</head>
+<body>
+    <h1>Telegram Messages Export with JSON Data</h1>
+    <div class="export-info">
+        <h2>Export Information</h2>
+        <p><strong>Export Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+        <p><strong>Start Link:</strong> <a href="{start_link}" target="_blank">{start_link}</a></p>
+        <p><strong>End Link:</strong> <a href="{end_link}" target="_blank">{end_link}</a></p>
+        <p><strong>Total Messages:</strong> {len(messages_data)}</p>
+        <p><strong>Successful:</strong> {len(successful_messages)}</p>
+        <p><strong>Service Messages:</strong> {len(service_messages)}</p>
+        <p><strong>Failed:</strong> {len(failed_messages)}</p>
+    </div>
+    <h2>Messages</h2>'''
             
             for msg_data in messages_data:
                 # If this is an error/log placeholder, render with clickable failed link
                 if 'error' in msg_data:
-                    # Reconstruct the message link based on chat_id pattern
-                    chat_id = msg_data.get('chat_id') or 'unknown'
-                    msg_id = msg_data['id']
-                    
-                    # Try to reconstruct the link based on start_link pattern
-                    if start_link.startswith("https://t.me/c/") and str(chat_id).startswith('-100'):
-                        clean_chat_id = str(chat_id)[4:] if str(chat_id).startswith('-100') else str(chat_id)
-                        failed_link = f"https://t.me/c/{clean_chat_id}/{msg_id}"
-                    else:
-                        try:
-                            username = start_link.split('https://t.me/')[-1].split('/')[0]
-                            failed_link = f"https://t.me/{username}/{msg_id}"
-                        except:
-                            failed_link = f"Message ID: {msg_id}"
-                    
                     html_content += (
                         f'<div class="message" id="msg-{msg_data["id"]}" style="background:#ffeaea;border:1px solid #ff8888;">'
                         f'<div class="message-header" style="color:#b71c1c;">Message ID: {msg_data["id"]} | ERROR</div>'
                         f'<div class="message-text" style="color:#b71c1c;"><b>Error:</b> {msg_data.get("error", "Unknown error")}</div>'
-                        f'<div style="margin-top:10px;"><strong>Check manually:</strong> <a href="{failed_link}" target="_blank" style="color:#0088cc;">{failed_link}</a></div>'
+                        f'<div style="margin-top:10px;"><strong>Check manually:</strong> <a href="{self._reconstruct_message_link(msg_data, start_link)}" target="_blank" style="color:#0088cc;">{self._reconstruct_message_link(msg_data, start_link)}</a></div>'
                         f'</div>'
                     )
                     continue
@@ -642,12 +998,24 @@ class MessageExporter:
                     json_data_str = f"Could not serialize message: {e}"
                 html_content += f'<div class="json-toggle" onclick="toggleJson({msg_data["id"]})">Show/Hide JSON Data</div><div id="json-{msg_data["id"]}" class="json-data">{json_data_str}</div></div>'
             
-            # Add statistics
+            # Add statistics and close HTML with external JS reference
             media_count = len(media_files)
             text_only_count = len([m for m in successful_messages if (m.get('text') or m.get('caption')) and not m.get('media_type') and not m.get('is_service')])
             reply_count = len([m for m in successful_messages if m.get('reply_to')])
             
-            html_content += f'<div class="stats"><h2>Export Statistics</h2><p>Total Messages: {len(messages_data)}</p><p>Successfully Exported: {len(successful_messages)}</p><p>Service Messages: {len(service_messages)}</p><p>Failed Messages: {len(failed_messages)}</p><p>Messages with Media: {media_count}</p><p>Text-only Messages: {text_only_count}</p><p>Reply Messages: {reply_count}</p></div></body></html>'
+            html_content += f'''<div class="stats">
+    <h2>Export Statistics</h2>
+    <p>Total Messages: {len(messages_data)}</p>
+    <p>Successfully Exported: {len(successful_messages)}</p>
+    <p>Service Messages: {len(service_messages)}</p>
+    <p>Failed Messages: {len(failed_messages)}</p>
+    <p>Messages with Media: {media_count}</p>
+    <p>Text-only Messages: {text_only_count}</p>
+    <p>Reply Messages: {reply_count}</p>
+</div>
+<script src="export_scripts.js"></script>
+</body>
+</html>'''
             
             # Always try to write the HTML file, even if there were errors
             with open(html_path, 'w', encoding='utf-8') as f:
@@ -657,3 +1025,18 @@ class MessageExporter:
             print(f"HTML generation failed: {e}")
             # Create emergency HTML if normal generation fails
             return self._create_emergency_html(start_link, end_link, f"HTML generation error: {e}", downloads_dir)
+
+    def _reconstruct_message_link(self, msg_data: Dict, start_link: str) -> str:
+        """Reconstruct message link for failed messages"""
+        chat_id = msg_data.get('chat_id') or 'unknown'
+        msg_id = msg_data['id']
+        
+        if start_link.startswith("https://t.me/c/") and str(chat_id).startswith('-100'):
+            clean_chat_id = str(chat_id)[4:] if str(chat_id).startswith('-100') else str(chat_id)
+            return f"https://t.me/c/{clean_chat_id}/{msg_id}"
+        else:
+            try:
+                username = start_link.split('https://t.me/')[-1].split('/')[0]
+                return f"https://t.me/{username}/{msg_id}"
+            except:
+                return f"Message ID: {msg_id}"

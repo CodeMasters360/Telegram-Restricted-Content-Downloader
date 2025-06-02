@@ -27,21 +27,26 @@ class Client():
         try:
             Console.clear()
             Intro.create()
-            print("Starting message export...")
-            print(f"From: {start_link}")
-            print(f"To: {end_link}")
+            print("🚀 Starting message export...")
+            print(f"📤 From: {start_link}")
+            print(f"📥 To: {end_link}")
+            print()
             
             html_filename = await self.exporter.export_message_range(start_link, end_link)
             
             if html_filename:
-                print(f"Export completed! HTML file created: {html_filename}")
+                print(f"\n✅ Export completed successfully!")
+                print(f"📄 HTML file: {html_filename}")
+                print(f"🎨 CSS file: export_styles.css")
+                print(f"⚡ JS file: export_scripts.js")
+                print("\n💡 Open the HTML file in your browser to view the exported messages.")
                 return html_filename
             else:
-                print("Export failed!")
+                print("\n❌ Export failed!")
                 return None
                 
         except Exception as e:
-            print(f"Export error: {e}")
+            print(f"\n💥 Export error: {e}")
             return None
     
     async def export_json_only(self, start_link: str, end_link: str) -> str:
@@ -49,21 +54,23 @@ class Client():
         try:
             Console.clear()
             Intro.create()
-            print("Starting JSON export...")
-            print(f"From: {start_link}")
-            print(f"To: {end_link}")
+            print("📊 Starting JSON export...")
+            print(f"📤 From: {start_link}")
+            print(f"📥 To: {end_link}")
+            print()
             
             json_filename = await self.exporter.export_json_only(start_link, end_link)
             
             if json_filename:
-                print(f"JSON export completed! File created: {json_filename}")
+                print(f"\n✅ JSON export completed!")
+                print(f"📋 File created: {json_filename}")
                 return json_filename
             else:
-                print("JSON export failed!")
+                print("\n❌ JSON export failed!")
                 return None
                 
         except Exception as e:
-            print(f"JSON export error: {e}")
+            print(f"\n💥 JSON export error: {e}")
             return None
     
     async def download_media(self, links: List[str]):
