@@ -197,206 +197,14 @@ class MessageExporter:
 
     def _create_css_file(self, downloads_dir: str):
         """Create separate CSS file"""
-        css_content = """
-body {
-    font-family: Arial, sans-serif;
-    margin: 20px;
-    background: #f5f5f5;
-}
-
-h1 {
-    color: #0088cc;
-    text-align: center;
-}
-
-h2 {
-    color: #333;
-    border-bottom: 2px solid #0088cc;
-    padding-bottom: 5px;
-}
-
-.export-info {
-    background: #fff;
-    padding: 15px;
-    margin-bottom: 20px;
-    border-radius: 5px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-
-.message {
-    background: #fff;
-    margin-bottom: 15px;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    position: relative;
-    transition: all 0.3s ease;
-}
-
-.service-message {
-    background: #f8f9fa;
-    border-left: 4px solid #6c757d;
-    font-style: italic;
-}
-
-.message-header {
-    font-size: 12px;
-    color: #666;
-    margin-bottom: 10px;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 5px;
-}
-
-.message-text {
-    line-height: 1.6;
-    margin-bottom: 10px;
-}
-
-.service-text {
-    color: #6c757d;
-    font-weight: 500;
-    text-align: center;
-    padding: 10px;
-}
-
-.message-media {
-    margin: 10px 0;
-}
-
-img {
-    max-width: 100%;
-    height: auto;
-    border-radius: 5px;
-}
-
-video {
-    max-width: 100%;
-    height: auto;
-    border-radius: 5px;
-}
-
-audio {
-    width: 100%;
-}
-
-.media-file {
-    background: #f9f9f9;
-    padding: 10px;
-    border-radius: 5px;
-    margin: 5px 0;
-}
-
-.caption {
-    font-style: italic;
-    color: #666;
-    margin-top: 10px;
-}
-
-.reply-info {
-    background: #e8f4fd;
-    border-left: 4px solid #0088cc;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 0 5px 5px 0;
-    cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-.reply-info:hover {
-    background: #d4edda;
-}
-
-.reply-preview {
-    font-size: 14px;
-    color: #555;
-}
-
-.json-toggle {
-    background: #f0f0f0;
-    border: 1px solid #ccc;
-    padding: 5px 10px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 12px;
-    margin-top: 10px;
-    display: inline-block;
-}
-
-.json-data {
-    display: none;
-    background: #2d2d2d;
-    color: #f8f8f2;
-    padding: 15px;
-    border-radius: 5px;
-    margin-top: 10px;
-    font-family: monospace;
-    font-size: 12px;
-    white-space: pre-wrap;
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.stats {
-    background: #e8f4fd;
-    padding: 10px;
-    border-radius: 5px;
-    margin-top: 20px;
-}
-
-.media-info {
-    font-size: 12px;
-    color: #888;
-    margin-top: 5px;
-}
-
-.highlight {
-    background: #ffeb3b !important;
-    border: 2px solid #ff9800 !important;
-    transform: scale(1.02);
-}
-
-.reply-link {
-    color: #0088cc;
-    text-decoration: underline;
-}
-"""
+        css_content = "body {font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5;} h1 {color: #0088cc; text-align: center;} h2 {color: #333; border-bottom: 2px solid #0088cc; padding-bottom: 5px;} .export-info {background: #fff; padding: 15px; margin-bottom: 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);} .message {background: #fff; margin-bottom: 15px; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position: relative; transition: all 0.3s ease;} .service-message {background: #f8f9fa; border-left: 4px solid #6c757d; font-style: italic;} .message-header {font-size: 12px; color: #666; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px;} .message-text {line-height: 1.6; margin-bottom: 10px;} .service-text {color: #6c757d; font-weight: 500; text-align: center; padding: 10px;} .message-media {margin: 10px 0;} img {max-width: 100%; height: auto; border-radius: 5px;} video {max-width: 100%; height: auto; border-radius: 5px;} audio {width: 100%;} .media-file {background: #f9f9f9; padding: 10px; border-radius: 5px; margin: 5px 0;} .caption {font-style: italic; color: #666; margin-top: 10px;} .reply-info {background: #e8f4fd; border-left: 4px solid #0088cc; padding: 10px; margin: 10px 0; border-radius: 0 5px 5px 0; cursor: pointer; transition: background 0.2s ease;} .reply-info:hover {background: #d4edda;} .reply-preview {font-size: 14px; color: #555;} .json-toggle {background: #f0f0f0; border: 1px solid #ccc; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px; margin-top: 10px; display: inline-block;} .json-data {display: none; background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; margin-top: 10px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto;} .stats {background: #e8f4fd; padding: 10px; border-radius: 5px; margin-top: 20px;} .media-info {font-size: 12px; color: #888; margin-top: 5px;} .highlight {background: #ffeb3b !important; border: 2px solid #ff9800 !important; transform: scale(1.02);} .reply-link {color: #0088cc; text-decoration: underline;}"
         css_path = os.path.join(downloads_dir, "export_styles.css")
         with open(css_path, 'w', encoding='utf-8') as f:
             f.write(css_content)
 
     def _create_js_file(self, downloads_dir: str):
         """Create separate JavaScript file"""
-        js_content = """
-function toggleJson(id) {
-    var elem = document.getElementById("json-" + id);
-    elem.style.display = elem.style.display === "none" ? "block" : "none";
-}
-
-function scrollToMessage(messageId) {
-    var targetMsg = document.getElementById("msg-" + messageId);
-    if (targetMsg) {
-        targetMsg.scrollIntoView({
-            behavior: "smooth",
-            block: "center"
-        });
-        targetMsg.classList.add("highlight");
-        setTimeout(function() {
-            targetMsg.classList.remove("highlight");
-        }, 1000);
-    } else {
-        alert("Replied message not found in this export range");
-    }
-}
-
-window.onload = function() {
-    document.querySelectorAll(".reply-info").forEach(function(elem) {
-        elem.addEventListener("click", function() {
-            var messageId = this.getAttribute("data-reply-to");
-            if (messageId) scrollToMessage(messageId);
-        });
-    });
-};
-"""
+        js_content = "function toggleJson(id) {var elem = document.getElementById('json-' + id); elem.style.display = elem.style.display === 'none' ? 'block' : 'none';} function scrollToMessage(messageId) {var targetMsg = document.getElementById('msg-' + messageId); if (targetMsg) {targetMsg.scrollIntoView({behavior: 'smooth', block: 'center'}); targetMsg.classList.add('highlight'); setTimeout(function() {targetMsg.classList.remove('highlight');}, 1000);} else {alert('Replied message not found in this export range');}} window.onload = function() {document.querySelectorAll('.reply-info').forEach(function(elem) {elem.addEventListener('click', function() {var messageId = this.getAttribute('data-reply-to'); if (messageId) scrollToMessage(messageId);});});};"
         js_path = os.path.join(downloads_dir, "export_scripts.js")
         with open(js_path, 'w', encoding='utf-8') as f:
             f.write(js_content)
@@ -406,49 +214,12 @@ window.onload = function() {
         try:
             if not os.path.exists(downloads_dir):
                 os.makedirs(downloads_dir)
-            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             html_filename = f"telegram_export_emergency_{timestamp}.html"
             html_path = os.path.join(downloads_dir, html_filename)
-            
-            emergency_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>Telegram Export - Emergency</title>
-                <style>
-                    body {{font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5;}}
-                    .emergency {{background: #fff; padding: 20px; border-radius: 5px; border-left: 4px solid #e74c3c;}}
-                    .info {{background: #fff; padding: 15px; margin-top: 20px; border-radius: 5px; border-left: 4px solid #3498db;}}
-                </style>
-            </head>
-            <body>
-                <div class="emergency">
-                    <h2>⚠️ Export Emergency Recovery</h2>
-                    <p><strong>The export process encountered a critical error, but this HTML file was created to preserve your request.</strong></p>
-                    <p><strong>Start Link:</strong> {start_link}</p>
-                    <p><strong>End Link:</strong> {end_link}</p>
-                    <p><strong>Error Details:</strong> {error_msg}</p>
-                    <p><strong>Generated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
-                </div>
-                <div class="info">
-                    <h3>📋 Troubleshooting</h3>
-                    <ul>
-                        <li>Check if the message links are valid and accessible</li>
-                        <li>Ensure you have access to the chat/channel</li>
-                        <li>Try exporting a smaller range of messages</li>
-                        <li>Check your internet connection</li>
-                        <li>Restart the application and try again</li>
-                    </ul>
-                </div>
-            </body>
-            </html>
-            """
-            
+            emergency_html = f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Telegram Export - Emergency</title><style>body {{font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5;}} .emergency {{background: #fff; padding: 20px; border-radius: 5px; border-left: 4px solid #e74c3c;}} .info {{background: #fff; padding: 15px; margin-top: 20px; border-radius: 5px; border-left: 4px solid #3498db;}}</style></head><body><div class="emergency"><h2>⚠️ Export Emergency Recovery</h2><p><strong>The export process encountered a critical error, but this HTML file was created to preserve your request.</strong></p><p><strong>Start Link:</strong> {start_link}</p><p><strong>End Link:</strong> {end_link}</p><p><strong>Error Details:</strong> {error_msg}</p><p><strong>Generated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p></div><div class="info"><h3>📋 Troubleshooting</h3><ul><li>Check if the message links are valid and accessible</li><li>Ensure you have access to the chat/channel</li><li>Try exporting a smaller range of messages</li><li>Check your internet connection</li><li>Restart the application and try again</li></ul></div></body></html>'
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(emergency_html)
-            
             return html_filename
         except Exception as e2:
             print(f"Even emergency HTML creation failed: {e2}")
@@ -773,6 +544,43 @@ window.onload = function() {
         except:
             return None
     
+    # --- RTL detection helper ---
+    def _is_rtl_text(self, text: str) -> bool:
+        """
+        Detect if the text is mostly Arabic/Persian and should be rendered RTL.
+        """
+        if not text:
+            return False
+        rtl_chars = 0
+        total_chars = 0
+        for c in text:
+            # Arabic and Persian Unicode blocks
+            if (
+                '\u0600' <= c <= '\u06FF' or  # Arabic
+                '\u0750' <= c <= '\u077F' or  # Arabic Supplement
+                '\u08A0' <= c <= '\u08FF' or  # Arabic Extended-A
+                '\uFB50' <= c <= '\uFDFF' or  # Arabic Presentation Forms-A
+                '\uFE70' <= c <= '\uFEFF' or  # Arabic Presentation Forms-B
+                '\u200F' == c                 # RTL mark
+            ):
+                rtl_chars += 1
+            if c.isalpha():
+                total_chars += 1
+        # If first non-space char is RTL, or >40% of letters are RTL, treat as RTL
+        first_nonspace = next((ch for ch in text if not ch.isspace()), '')
+        first_is_rtl = (
+            '\u0600' <= first_nonspace <= '\u06FF' or
+            '\u0750' <= first_nonspace <= '\u077F' or
+            '\u08A0' <= first_nonspace <= '\u08FF' or
+            '\uFB50' <= first_nonspace <= '\uFDFF' or
+            '\uFE70' <= first_nonspace <= '\uFEFF' or
+            '\u200F' == first_nonspace
+        )
+        if total_chars == 0:
+            return False
+        rtl_ratio = rtl_chars / total_chars
+        return first_is_rtl or rtl_ratio > 0.4
+
     def _generate_enhanced_html_export(self, messages_data: List[Dict], media_files: List[Dict], downloads_dir: str, start_link: str, end_link: str) -> str:
         """Generate enhanced HTML file with external CSS and JS references"""
         try:
@@ -934,7 +742,11 @@ window.onload = function() {
                 if msg_data.get('text') or msg_data.get('caption'):
                     text_content = msg_data.get('text') or msg_data.get('caption')
                     escaped_text = text_content.replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
-                    html_content += f'<div class="message-text">{escaped_text}</div>'
+                    # RTL detection
+                    if self._is_rtl_text(text_content):
+                        html_content += f'<div class="message-text" dir="rtl" style="text-align:right">{escaped_text}</div>'
+                    else:
+                        html_content += f'<div class="message-text">{escaped_text}</div>'
                 
                 # Media content
                 if msg_data['id'] in media_lookup:
